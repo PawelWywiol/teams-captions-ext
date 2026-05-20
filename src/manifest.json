@@ -4,9 +4,8 @@
   "version": "0.1.0",
   "description": "Capture Teams captions and send them on demand to a compatible LLM proxy.",
   "permissions": ["storage"],
-  "host_permissions": [
-    "https://teams.microsoft.com/*",
-    "https://*.teams.microsoft.com/*",
+  "host_permissions": ["https://teams.microsoft.com/*", "https://*.teams.microsoft.com/*"],
+  "optional_host_permissions": [
     "http://localhost/*",
     "http://127.0.0.1/*",
     "http://10.*/*",

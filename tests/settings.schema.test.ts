@@ -27,6 +27,18 @@ describe("validateSettings", () => {
     expect(validateSettings(makeSettings({ apiBaseUrl: "http://localhost:8787" }))).toBeNull();
   });
 
+  it("rejects http loopback addresses other than 127.0.0.1 because runtime host permissions are intentionally narrower", () => {
+    expect(validateSettings(makeSettings({ apiBaseUrl: "http://127.1.2.3:8787" }))).toBe(
+      "HTTP is allowed only for localhost or 127.0.0.1",
+    );
+  });
+
+  it("rejects .local over http because runtime host permissions are intentionally narrower", () => {
+    expect(validateSettings(makeSettings({ apiBaseUrl: "http://proxy.local:8787" }))).toBe(
+      "HTTP is allowed only for localhost or 127.0.0.1",
+    );
+  });
+
   it("accepts private network https url", () => {
     expect(validateSettings(makeSettings({ apiBaseUrl: "https://proxy.local" }))).toBeNull();
   });
@@ -45,7 +57,7 @@ describe("validateSettings", () => {
 
   it("rejects public http url", () => {
     expect(validateSettings(makeSettings({ apiBaseUrl: "http://example.com" }))).toBe(
-      "HTTP is allowed only for localhost or private network addresses",
+      "HTTP is allowed only for localhost or 127.0.0.1",
     );
   });
 });

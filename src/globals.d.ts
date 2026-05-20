@@ -9,6 +9,10 @@ declare const browser: {
       set(value: Record<string, unknown>): Promise<void>;
     };
   };
+  permissions: {
+    contains(details: { origins: string[] }): Promise<boolean>;
+    request(details: { origins: string[] }): Promise<boolean>;
+  };
   runtime: {
     sendMessage(message: unknown): Promise<unknown>;
     openOptionsPage(): Promise<void>;

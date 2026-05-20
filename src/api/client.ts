@@ -1,3 +1,4 @@
+import { ensureApiOriginPermission } from "./permissions.js";
 import type { PluginSettings } from "../shared/types.js";
 
 export async function generateAnalysis(
@@ -7,6 +8,8 @@ export async function generateAnalysis(
   if (!settings.apiBaseUrl) {
     throw new Error("API Base URL is not configured");
   }
+
+  await ensureApiOriginPermission(settings.apiBaseUrl);
 
   const response = await fetch(`${settings.apiBaseUrl}/v1/generate`, {
     method: "POST",
