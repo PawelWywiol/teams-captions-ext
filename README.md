@@ -27,8 +27,9 @@ This repository currently contains a secure TypeScript scaffold with:
 - Unit tests for the core pure logic
 - Lefthook gates: pre-commit runs typecheck/lint/format check, pre-push runs tests
 - CI runs typecheck, lint, format check, test, and dependency audit
+- local mock proxy for manual extension testing
 
-It is intentionally light on build tooling for browser packaging. The next step is to add the real extension packaging path and Teams-specific DOM selectors.
+The repo is now in a **manual-testable** state for Chromium-family browsers using the packaged extension bundle and the local mock proxy. Safari conversion/packaging is still a follow-up step.
 
 ## Quick start
 
@@ -55,6 +56,81 @@ pnpm audit:deps
 
 The packaging output intentionally excludes test files and the raw `src/` tree.
 
+## Manual test
+
+### 1. Build the extension bundle
+
+```bash
+pnpm build:extension
+```
+
+### 2. Start the local mock proxy
+
+```bash
+pnpm dev:mock-proxy
+```
+
+Optional bearer-token mode:
+
+```bash
+MOCK_BEARER_TOKEN=secret-demo-token pnpm dev:mock-proxy
+```
+
+The proxy listens on:
+
+- `http://127.0.0.1:8787`
+- `GET /health`
+- `POST /v1/generate`
+
+### 3. Verify the mock proxy quickly
+
+```bash
+curl http://127.0.0.1:8787/health
+```
+
+Expected: JSON with `ok: true`.
+
+### 4. Load `dist/extension/`
+
+Use a Chromium browser for now:
+
+- open extensions page
+- enable developer mode
+- choose **Load unpacked**
+- Load `dist/extension/`
+
+### 4. Configure the extension
+
+Open extension settings and set:
+
+- `API Base URL`: `http://127.0.0.1:8787`
+- `Bearer Token`: empty by default, or `secret-demo-token` if you started the mock proxy with `MOCK_BEARER_TOKEN`
+- provider: any value is fine for mock testing
+- optional custom title / prompt / aliases as desired
+
+Save settings.
+
+### 5. Manual smoke test
+
+- open Microsoft Teams in browser
+- open a meeting page where captions can appear
+- trigger or simulate captions
+- open the extension popup
+- verify status changes from Teams page detection / capture
+- click **Analyze**
+- expect a mock response containing `Mock summary`
+
+### 6. What this proves
+
+This manual test proves:
+
+- packaged extension loads correctly
+- settings page saves and reloads
+- runtime host-permission request path works for configured proxy origin
+- popup can trigger analysis
+- background can call the configured API endpoint
+- token flow works in both no-token and bearer-token-required mode
+
 ## Structure
 
 ```text
@@ -72,6 +148,7 @@ src/
   globals.d.ts
 tests/
 docs/architecture/
+scripts/
 ```
 
 ## Security notes
@@ -80,3 +157,5 @@ docs/architecture/
 - transcript data is treated as untrusted input
 - no transcript is sent unless analysis is triggered
 - extension logic is split so pure logic stays testable
+- proxy/API host access is narrowed to optional runtime-granted origins instead of broad static permissions
+- bearer token is kept out of persistent local storage
