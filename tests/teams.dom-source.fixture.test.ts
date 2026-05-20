@@ -2,7 +2,11 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { JSDOM } from "jsdom";
 import { describe, expect, it } from "vitest";
-import { DomCaptionSource, extractCaptionEntriesFromRoot, findCaptionsRoot } from "../src/content/dom-source.js";
+import {
+  DomCaptionSource,
+  extractCaptionEntriesFromRoot,
+  findCaptionsRoot,
+} from "../src/content/dom-source.js";
 import type { CaptionEntry } from "../src/shared/types.js";
 
 function loadFixtureDocument(): Document {
@@ -11,7 +15,9 @@ function loadFixtureDocument(): Document {
 }
 
 function buildSingleCaptionDocument(withAuthor = true): Document {
-  const author = withAuthor ? '<span class="fui-ChatMessageCompact__author"><span data-tid="author">Solo Speaker</span></span>' : "";
+  const author = withAuthor
+    ? '<span class="fui-ChatMessageCompact__author"><span data-tid="author">Solo Speaker</span></span>'
+    : "";
   const html = `
     <div class="fui-Primitive">
       <div class="fui-Flex teams-captions-list">

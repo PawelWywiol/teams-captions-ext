@@ -2,26 +2,31 @@
   "name": "teams-captions-ext",
   "version": "0.1.0",
   "private": true,
-  "type": "module",
   "description": "Safari-first Teams captions extension starter",
-  "packageManager": "pnpm@9.0.0",
+  "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "oxlint .",
-    "audit:deps": "audit-ci --moderate",
+    "format": "oxfmt \"src/**/*.ts\" \"tests/**/*.ts\" package.json src/manifest.json",
+    "format:check": "oxfmt --check \"src/**/*.ts\" \"tests/**/*.ts\" package.json src/manifest.json",
+    "audit:deps": "audit-ci --config ./audit-ci.json",
     "prepare": "lefthook install"
   },
   "devDependencies": {
-    "@types/jsdom": "^21.1.7",
-    "@types/node": "^22.13.10",
+    "@types/jsdom": "^28.0.3",
+    "@types/node": "^25.9.1",
     "audit-ci": "^7.1.0",
-    "jsdom": "^26.0.0",
-    "lefthook": "^1.11.2",
-    "oxlint": "^0.15.14",
-    "typescript": "^5.8.2",
-    "vitest": "^2.1.9"
-  }
+    "esbuild": "^0.28.0",
+    "jsdom": "^29.1.1",
+    "lefthook": "^2.1.8",
+    "oxfmt": "^0.51.0",
+    "oxlint": "^1.66.0",
+    "typescript": "^6.0.3",
+    "vite": "^8.0.13",
+    "vitest": "^4.1.7"
+  },
+  "packageManager": "pnpm@9.0.0"
 }

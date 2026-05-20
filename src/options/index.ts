@@ -11,7 +11,10 @@ function ensureInput(id: string): HTMLInputElement | HTMLTextAreaElement | HTMLS
 function parseAliases(raw: string): Record<string, string> {
   const result: Record<string, string> = {};
 
-  for (const line of raw.split("\n").map((line) => line.trim()).filter(Boolean)) {
+  for (const line of raw
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)) {
     const [original, alias] = line.split("=").map((part) => part.trim());
     if (original && alias) result[original] = alias;
   }

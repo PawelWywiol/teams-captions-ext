@@ -24,7 +24,9 @@ This repository currently contains a secure TypeScript scaffold with:
 - options starter
 - shared types and storage helpers
 - payload builder and proxy client
-- unit tests for the core pure logic
+- Unit tests for the core pure logic
+- Lefthook gates: pre-commit runs typecheck/lint/format check, pre-push runs tests
+- CI runs typecheck, lint, format check, test, and dependency audit
 
 It is intentionally light on build tooling for browser packaging. The next step is to add the real extension packaging path and Teams-specific DOM selectors.
 
@@ -32,8 +34,12 @@ It is intentionally light on build tooling for browser packaging. The next step 
 
 ```bash
 pnpm install
+pnpm typecheck
+pnpm lint
+pnpm format:check
 pnpm test
 pnpm build
+pnpm audit:deps
 ```
 
 ## Structure

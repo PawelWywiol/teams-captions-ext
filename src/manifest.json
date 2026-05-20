@@ -40,10 +40,7 @@
   "options_page": "options/index.html",
   "content_scripts": [
     {
-      "matches": [
-        "https://teams.microsoft.com/*",
-        "https://*.teams.microsoft.com/*"
-      ],
+      "matches": ["https://teams.microsoft.com/*", "https://*.teams.microsoft.com/*"],
       "js": ["content/index.js"],
       "run_at": "document_idle"
     }

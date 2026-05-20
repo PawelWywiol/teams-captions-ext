@@ -30,7 +30,8 @@ function findCaptionMarkers(root: ParentNode): HTMLElement[] {
 }
 
 function toCaptionEntry(element: HTMLElement): CaptionEntry | null {
-  const speakerOriginal = element.querySelector(CAPTION_AUTHOR_SELECTOR)?.textContent?.trim() || undefined;
+  const speakerOriginal =
+    element.querySelector(CAPTION_AUTHOR_SELECTOR)?.textContent?.trim() || undefined;
   const text = element.querySelector(CAPTION_TEXT_SELECTOR)?.textContent?.trim();
 
   if (!text) return null;
@@ -131,7 +132,8 @@ export class DomCaptionSource {
   }
 
   private parseNode(node: HTMLElement): CaptionEntry | null {
-    const candidate = findMessageContainer(node) ?? findMessageContainer(node.querySelector(CAPTION_TEXT_SELECTOR));
+    const candidate =
+      findMessageContainer(node) ?? findMessageContainer(node.querySelector(CAPTION_TEXT_SELECTOR));
 
     if (!candidate) return null;
 

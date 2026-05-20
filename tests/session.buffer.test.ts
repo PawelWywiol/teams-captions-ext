@@ -29,7 +29,10 @@ describe("session buffer", () => {
   it("appends non-duplicate entries", () => {
     appendCaption("https://teams.example.test/meeting/1", makeEntry({ text: "First line" }));
 
-    const session = appendCaption("https://teams.example.test/meeting/1", makeEntry({ text: "Second line" }));
+    const session = appendCaption(
+      "https://teams.example.test/meeting/1",
+      makeEntry({ text: "Second line" }),
+    );
 
     expect(session.entries).toHaveLength(2);
   });
@@ -37,7 +40,10 @@ describe("session buffer", () => {
   it("does not append duplicates", () => {
     appendCaption("https://teams.example.test/meeting/1", makeEntry({ text: "Same line" }));
 
-    const session = appendCaption("https://teams.example.test/meeting/1", makeEntry({ text: "Same line" }));
+    const session = appendCaption(
+      "https://teams.example.test/meeting/1",
+      makeEntry({ text: "Same line" }),
+    );
 
     expect(session.entries).toHaveLength(1);
   });
@@ -45,7 +51,10 @@ describe("session buffer", () => {
   it("starts a new session when pageUrl changes", () => {
     appendCaption("https://teams.example.test/meeting/1", makeEntry({ text: "First meeting" }));
 
-    const session = appendCaption("https://teams.example.test/meeting/2", makeEntry({ text: "Second meeting" }));
+    const session = appendCaption(
+      "https://teams.example.test/meeting/2",
+      makeEntry({ text: "Second meeting" }),
+    );
 
     expect(session.pageUrl).toBe("https://teams.example.test/meeting/2");
     expect(session.entries).toHaveLength(1);

@@ -4,7 +4,9 @@ import { DomCaptionSource } from "./dom-source.js";
 let currentPageUrl = window.location.href;
 let currentSource: DomCaptionSource | null = null;
 
-async function publishStatus(status: "not_on_teams" | "on_teams" | "captions_unknown" | "capturing"): Promise<void> {
+async function publishStatus(
+  status: "not_on_teams" | "on_teams" | "captions_unknown" | "capturing",
+): Promise<void> {
   await sendRuntimeMessage({
     type: "PAGE_STATUS",
     payload: {

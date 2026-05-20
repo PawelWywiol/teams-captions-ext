@@ -32,7 +32,9 @@ describe("validateSettings", () => {
   });
 
   it("rejects invalid url", () => {
-    expect(validateSettings(makeSettings({ apiBaseUrl: "not-a-url" }))).toBe("API Base URL is invalid");
+    expect(validateSettings(makeSettings({ apiBaseUrl: "not-a-url" }))).toBe(
+      "API Base URL is invalid",
+    );
   });
 
   it("rejects non-http protocol", () => {
