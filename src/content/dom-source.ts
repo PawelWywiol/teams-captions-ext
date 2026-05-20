@@ -1,22 +1,30 @@
 import type { CaptionEntry } from "../shared/types.js";
+import {
+  CAPTION_AUTHOR_SELECTOR,
+  CAPTION_MARKER_SELECTOR,
+  CAPTION_TEXT_SELECTOR,
+  findCaptionMarkers,
+  findCaptionTextNodes,
+  hasBlockingSiblingBranches,
+  hasUnexpectedReadableText,
+  isValidCaptionBoundary,
+} from "./selectors.js";
 
 type OnEntry = (entry: CaptionEntry) => void;
+const INVALID_CAPTION_PATH = Symbol("invalid-caption-path");
 
-const CAPTION_MARKER_SELECTOR = '[data-tid="closed-captions-v2-items-renderer"]';
-const CAPTION_AUTHOR_SELECTOR = '[data-tid="author"]';
-const CAPTION_TEXT_SELECTOR = '[data-tid="closed-caption-text"]';
-const CHAT_MESSAGE_CLASS = "fui-ChatMessageCompact";
-
-function hasClassToken(element: Element, token: string): boolean {
-  return element.classList.contains(token);
-}
-
-function findMessageContainer(element: Element | null): HTMLElement | null {
-  let current = element;
+function resolveCaptionBoundary(
+  textNode: Element | null,
+): HTMLElement | typeof INVALID_CAPTION_PATH | null {
+  let current = textNode;
 
   while (current) {
-    if ("classList" in current && hasClassToken(current, CHAT_MESSAGE_CLASS)) {
+    if (isValidCaptionBoundary(current)) {
       return current as HTMLElement;
+    }
+
+    if (hasBlockingSiblingBranches(current) || hasUnexpectedReadableText(current)) {
+      return INVALID_CAPTION_PATH;
     }
 
     current = current.parentElement;
@@ -25,8 +33,27 @@ function findMessageContainer(element: Element | null): HTMLElement | null {
   return null;
 }
 
-function findCaptionMarkers(root: ParentNode): HTMLElement[] {
-  return Array.from(root.querySelectorAll(CAPTION_MARKER_SELECTOR)) as HTMLElement[];
+function findContainerByTextNode(textNode: Element | null): HTMLElement | null {
+  const resolved = resolveCaptionBoundary(textNode);
+  return resolved instanceof HTMLElement ? resolved : null;
+}
+
+function findContainerByMarker(marker: Element | null): HTMLElement | null {
+  let current = marker;
+
+  while (current) {
+    if (isValidCaptionBoundary(current)) {
+      return current as HTMLElement;
+    }
+
+    if (hasBlockingSiblingBranches(current) || hasUnexpectedReadableText(current)) {
+      return null;
+    }
+
+    current = current.parentElement;
+  }
+
+  return null;
 }
 
 function toCaptionEntry(element: HTMLElement): CaptionEntry | null {
@@ -36,15 +63,13 @@ function toCaptionEntry(element: HTMLElement): CaptionEntry | null {
 
   if (!text) return null;
 
-  const entry: CaptionEntry = {
+  return {
     id: crypto.randomUUID(),
     ts: new Date().toISOString(),
     speakerOriginal,
     text,
     source: "dom",
   };
-
-  return entry;
 }
 
 export function findCaptionsRoot(root: ParentNode = document): HTMLElement | null {
@@ -52,7 +77,7 @@ export function findCaptionsRoot(root: ParentNode = document): HTMLElement | nul
 
   if (!firstMarker) return null;
 
-  const firstMessage = findMessageContainer(firstMarker);
+  const firstMessage = findContainerByMarker(firstMarker);
   if (!firstMessage) return firstMarker;
 
   let current: HTMLElement = firstMessage;
@@ -97,18 +122,30 @@ function findObservationRoot(root: HTMLElement): HTMLElement {
 }
 
 export function extractCaptionEntriesFromRoot(root: HTMLElement): CaptionEntry[] {
-  const textNodes = Array.from(root.querySelectorAll<HTMLElement>(CAPTION_TEXT_SELECTOR));
+  if (hasBlockingSiblingBranches(root) || hasUnexpectedReadableText(root)) {
+    return [];
+  }
+
+  const textNodes = findCaptionTextNodes(root);
   const seen = new Set<HTMLElement>();
   const entries: CaptionEntry[] = [];
 
   for (const textNode of textNodes) {
-    const container = findMessageContainer(textNode);
-    if (!container || seen.has(container)) continue;
+    const resolved = resolveCaptionBoundary(textNode);
+    if (resolved === INVALID_CAPTION_PATH || resolved === null) {
+      return [];
+    }
 
-    seen.add(container);
+    if (seen.has(resolved)) continue;
+    seen.add(resolved);
 
-    const entry = toCaptionEntry(container);
-    if (entry) entries.push(entry);
+    const entry = toCaptionEntry(resolved);
+    if (entry) {
+      entries.push(entry);
+      continue;
+    }
+
+    return [];
   }
 
   return entries;
@@ -131,20 +168,31 @@ export class DomCaptionSource {
     return this.recentFingerprints.includes(fingerprint);
   }
 
-  private parseNode(node: HTMLElement): CaptionEntry | null {
-    const candidate =
-      findMessageContainer(node) ?? findMessageContainer(node.querySelector(CAPTION_TEXT_SELECTOR));
+  private emitIfFresh(entry: CaptionEntry | null): CaptionEntry | null {
+    if (!entry) return null;
 
-    if (!candidate) return null;
-
-    const parsed = toCaptionEntry(candidate);
-    if (!parsed) return null;
-
-    const fingerprint = `${parsed.speakerOriginal ?? ""}::${parsed.text}`;
+    const fingerprint = `${entry.speakerOriginal ?? ""}::${entry.text}`;
     if (this.hasRecentFingerprint(fingerprint)) return null;
 
     this.rememberFingerprint(fingerprint);
-    return parsed;
+    return entry;
+  }
+
+  private parseNode(node: HTMLElement): CaptionEntry[] {
+    const entries: CaptionEntry[] = [];
+    const textNodes = node.matches(CAPTION_TEXT_SELECTOR)
+      ? [node]
+      : Array.from(node.querySelectorAll<HTMLElement>(CAPTION_TEXT_SELECTOR));
+
+    for (const textNode of textNodes) {
+      const container = findContainerByTextNode(textNode);
+      if (!container) continue;
+
+      const entry = this.emitIfFresh(toCaptionEntry(container));
+      if (entry) entries.push(entry);
+    }
+
+    return entries;
   }
 
   start(): boolean {
@@ -156,8 +204,10 @@ export class DomCaptionSource {
       for (const mutation of mutations) {
         for (const node of mutation.addedNodes) {
           if (!(node instanceof HTMLElement)) continue;
-          const parsed = this.parseNode(node);
-          if (parsed) this.onEntry(parsed);
+
+          for (const entry of this.parseNode(node)) {
+            this.onEntry(entry);
+          }
         }
       }
     });
