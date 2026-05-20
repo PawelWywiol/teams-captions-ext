@@ -1,4 +1,4 @@
-import { loadSettings, saveSettings } from "../shared/storage.js";
+import { loadPersistedSettings, loadSettings, saveSettings } from "../shared/storage.js";
 import type { PluginSettings, ProviderId } from "../shared/types.js";
 import { validateSettings } from "./schema.js";
 
@@ -6,6 +6,12 @@ function ensureInput(id: string): HTMLInputElement | HTMLTextAreaElement | HTMLS
   const element = document.getElementById(id);
   if (!element) throw new Error(`Missing element: ${id}`);
   return element as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
+}
+
+function ensureButton(id: string): HTMLButtonElement {
+  const element = document.getElementById(id);
+  if (!element) throw new Error(`Missing button: ${id}`);
+  return element as HTMLButtonElement;
 }
 
 function parseAliases(raw: string): Record<string, string> {
@@ -52,9 +58,43 @@ document.addEventListener("DOMContentLoaded", async () => {
   const saveStatus = document.getElementById("save-status");
   if (!saveStatus) throw new Error("Missing save-status");
 
-  render(await loadSettings());
+  const saveButton = ensureButton("save");
+  let secureLoadFailed = false;
+  let recoveryDataLoaded = false;
 
-  document.getElementById("save")?.addEventListener("click", async () => {
+  try {
+    render(await loadSettings());
+    recoveryDataLoaded = true;
+    saveStatus.textContent = "";
+  } catch (error) {
+    secureLoadFailed = true;
+    saveButton.disabled = true;
+
+    try {
+      render(await loadPersistedSettings());
+      recoveryDataLoaded = true;
+    } catch {
+      recoveryDataLoaded = false;
+      render({
+        apiBaseUrl: "",
+        bearerToken: "",
+        provider: "copilot",
+        customTitleDefault: "",
+        extendedPromptDefault: "",
+        participantAliases: {},
+      });
+    }
+
+    saveStatus.textContent = error instanceof Error ? error.message : "Failed to load settings";
+  }
+
+  ensureInput("bearerToken").addEventListener("input", () => {
+    if (!secureLoadFailed || !recoveryDataLoaded) return;
+    saveButton.disabled = false;
+    saveStatus.textContent = "Enter token again to re-enable save";
+  });
+
+  saveButton.addEventListener("click", async () => {
     const settings = readForm();
     const validationError = validateSettings(settings);
 
@@ -63,7 +103,25 @@ document.addEventListener("DOMContentLoaded", async () => {
       return;
     }
 
-    await saveSettings(settings);
-    saveStatus.textContent = "Saved";
+    if (secureLoadFailed) {
+      if (!recoveryDataLoaded) {
+        saveStatus.textContent = "Reload after settings storage recovers before saving";
+        return;
+      }
+      if (!settings.bearerToken) {
+        saveStatus.textContent = "Enter token again before saving";
+        return;
+      }
+    }
+
+    try {
+      await saveSettings(settings);
+      secureLoadFailed = false;
+      recoveryDataLoaded = true;
+      saveButton.disabled = false;
+      saveStatus.textContent = "Saved";
+    } catch (error) {
+      saveStatus.textContent = error instanceof Error ? error.message : "Failed to save settings";
+    }
   });
 });

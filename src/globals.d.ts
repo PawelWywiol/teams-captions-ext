@@ -4,6 +4,10 @@ declare const browser: {
       get(key: string): Promise<Record<string, unknown>>;
       set(value: Record<string, unknown>): Promise<void>;
     };
+    session: {
+      get(key: string): Promise<Record<string, unknown>>;
+      set(value: Record<string, unknown>): Promise<void>;
+    };
   };
   runtime: {
     sendMessage(message: unknown): Promise<unknown>;
