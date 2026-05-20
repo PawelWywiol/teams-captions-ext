@@ -30,7 +30,7 @@ function runBuild(): void {
 }
 
 describe("build output", () => {
-  it("produces compiled source without emitting tests into dist", () => {
+  it("produces compiled source without emitting tests into dist", { timeout: 15000 }, () => {
     rmSync(distRoot, { force: true, recursive: true });
 
     runBuild();

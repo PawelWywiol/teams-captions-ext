@@ -89,7 +89,12 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   ensureInput("bearerToken").addEventListener("input", () => {
-    if (!secureLoadFailed || !recoveryDataLoaded) return;
+    if (!secureLoadFailed) return;
+    if (!recoveryDataLoaded) {
+      saveButton.disabled = true;
+      saveStatus.textContent = "Reload after settings storage recovers before saving";
+      return;
+    }
     saveButton.disabled = false;
     saveStatus.textContent = "Enter token again to re-enable save";
   });

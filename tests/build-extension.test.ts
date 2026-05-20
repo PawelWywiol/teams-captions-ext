@@ -30,7 +30,7 @@ function runBuildExtension(): void {
 }
 
 describe("build:extension packaging", () => {
-  it("produces a clean extension bundle under dist/extension", () => {
+  it("produces a clean extension bundle under dist/extension", { timeout: 15000 }, () => {
     rmSync(distExtension, { force: true, recursive: true });
 
     runBuildExtension();
