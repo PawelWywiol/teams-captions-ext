@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+  <body>
+    <input id="apiBaseUrl" placeholder="API Base URL" />
+    <input id="bearerToken" type="password" placeholder="Bearer Token" />
+    <select id="provider">
+      <option value="copilot">copilot</option>
+      <option value="claude">claude</option>
+      <option value="gemini">gemini</option>
+    </select>
+    <input id="customTitleDefault" placeholder="Custom Title Default" />
+    <textarea id="extendedPromptDefault" placeholder="Extended Prompt Default"></textarea>
+    <textarea id="participantAliases" placeholder="Original = Alias"></textarea>
+    <button id="save">Save</button>
+    <div id="save-status"></div>
+    <script type="module" src="./index.js"></script>
+  </body>
+</html>
