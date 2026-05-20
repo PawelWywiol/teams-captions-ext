@@ -39,8 +39,21 @@ pnpm lint
 pnpm format:check
 pnpm test
 pnpm build
+pnpm build:extension
 pnpm audit:deps
 ```
+
+## Packaging
+
+`pnpm build:extension` produces a clean browser-extension bundle in `dist/extension/`:
+
+- `manifest.json`
+- `background/index.js`
+- `content/index.js`
+- `options/index.html` + `options/index.js`
+- `popup/index.html` + `popup/index.js`
+
+The packaging output intentionally excludes test files and the raw `src/` tree.
 
 ## Structure
 

@@ -5,7 +5,8 @@
   "description": "Safari-first Teams captions extension starter",
   "type": "module",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.build.json",
+    "build:extension": "node ./scripts/build-extension.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
