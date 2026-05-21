@@ -42,6 +42,8 @@ function convert() {
     BUNDLE_ID,
     "--app-name",
     APP_NAME,
+    "--platform",
+    "macos",
     "--no-open",
     "--force",
     "--swift",
@@ -65,9 +67,9 @@ function listScheme(projectPath) {
     encoding: "utf8",
   });
   const data = JSON.parse(output);
-  const scheme = data.project?.schemes?.[0];
-  if (!scheme) throw new Error("No scheme detected in generated project");
-  return scheme;
+  const schemes = data.project?.schemes ?? [];
+  if (!schemes.length) throw new Error("No scheme detected in generated project");
+  return schemes.find((s) => /macos/i.test(s)) ?? schemes[0];
 }
 
 function xcodeBuild(projectPath, scheme) {
