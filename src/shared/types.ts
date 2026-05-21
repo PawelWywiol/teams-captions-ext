@@ -59,11 +59,17 @@ export type PageStatusMessagePayload = {
   status: PluginStatus;
 };
 
+export type AnalyzeSessionPayload = {
+  sessionId: string;
+  prompt?: string;
+};
+
 export type RuntimeMessage =
   | { type: "GET_POPUP_STATE" }
   | { type: "GET_SETTINGS" }
   | { type: "CAPTION_ENTRY"; payload: CaptionEntryMessagePayload }
   | { type: "PAGE_STATUS"; payload: PageStatusMessagePayload }
-  | { type: "ANALYZE_CURRENT_SESSION" }
+  | { type: "ANALYZE_CURRENT_SESSION"; payload?: { prompt?: string } }
+  | { type: "ANALYZE_SESSION"; payload: AnalyzeSessionPayload }
   | { type: "CLEAR_RESULT" }
   | { type: "STOP_CAPTURE" };

@@ -16,8 +16,12 @@ declare const browser: {
   runtime: {
     sendMessage(message: unknown): Promise<unknown>;
     openOptionsPage(): Promise<void>;
+    getURL(path: string): string;
     onMessage: {
       addListener(listener: (message: any) => unknown): void;
     };
+  };
+  tabs: {
+    create(properties: { url: string; active?: boolean }): Promise<unknown>;
   };
 };

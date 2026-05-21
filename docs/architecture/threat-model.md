@@ -8,18 +8,18 @@
 4. Storing sensitive meeting data longer than needed
 5. Teams DOM changes breaking extraction silently
 
-## Current mitigations in scaffold
+## Current mitigations
 
 - no telemetry
 - no automatic transcript upload
 - explicit configured endpoint only
 - transcript treated as untrusted input
 - pure logic separated for testing
+- transcripts persisted only in local IndexedDB (origin-scoped to the extension); deletable per-session from the UI
 
 ## Next mitigations
 
-- tighten Teams host strategy
 - add explicit export flow
 - add debug redaction
 - sanitize markdown rendering
-- add stronger extension storage policy
+- offer a one-click "wipe all transcripts" action

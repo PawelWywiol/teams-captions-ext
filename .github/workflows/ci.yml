@@ -11,14 +11,12 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        node-version: [20, 22]
+        node-version: [22, 24]
 
     steps:
       - uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v4
-        with:
-          version: 9.0.0
 
       - uses: actions/setup-node@v4
         with:
@@ -41,3 +39,30 @@ jobs:
 
       - name: Dependency audit
         run: pnpm audit:deps
+
+  preview-bundle:
+    runs-on: ubuntu-latest
+    needs: ci
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm build:extension
+
+      - run: pnpm package:chromium
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: teams-captions-ext-chromium-pr-${{ github.event.pull_request.number }}
+          path: dist/teams-captions-ext-chromium.zip
+          if-no-files-found: error
+          retention-days: 14

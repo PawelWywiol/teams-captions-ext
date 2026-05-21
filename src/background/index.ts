@@ -1,14 +1,21 @@
-import { buildAnalysisPayload } from "../analysis/payload-builder.js";
-import { generateAnalysis } from "../api/client.js";
+import { countEntries } from "../shared/db/index.js";
+import { analyzeSession } from "../shared/llm/orchestrator.js";
 import { loadSettings } from "../shared/storage.js";
 import type {
+  AnalyzeSessionPayload,
   BackgroundState,
   CaptionEntryMessagePayload,
   PageStatusMessagePayload,
+  PluginStatus,
   PopupState,
   RuntimeMessage,
 } from "../shared/types.js";
-import { appendCaption, clearSession, getSession } from "../session/buffer.js";
+import {
+  getActiveSession,
+  getActiveSessionId,
+  ingestCaption,
+  stopActiveSession,
+} from "./session-orchestrator.js";
 
 const state: BackgroundState = {
   status: "not_on_teams",
@@ -17,34 +24,24 @@ const state: BackgroundState = {
   lastError: "",
 };
 
-function getPopupState(): PopupState {
+async function getPopupState(): Promise<PopupState> {
+  const sessionId = getActiveSessionId();
+  const entriesCount = sessionId ? await countEntries(sessionId) : 0;
   return {
     status: state.status,
-    entriesCount: getSession()?.entries.length ?? 0,
+    entriesCount,
     lastError: state.lastError || undefined,
     resultText: state.resultText || undefined,
   };
 }
 
-async function analyzeCurrentSession(): Promise<PopupState> {
-  const session = getSession();
-
-  if (!session || session.entries.length === 0) {
-    state.status = "error";
-    state.lastError = "No captions collected";
-    return getPopupState();
-  }
-
+async function analyze(sessionId: string, prompt: string | undefined): Promise<PopupState> {
   state.status = "analyzing";
   state.lastError = "";
-
   try {
-    const settings = await loadSettings();
-    const payload = buildAnalysisPayload(session, settings);
-    const resultText = await generateAnalysis(settings, payload);
-
+    const result = await analyzeSession(sessionId, { userPrompt: prompt });
     state.status = "result_ready";
-    state.resultText = resultText;
+    state.resultText = result.summary.content;
     return getPopupState();
   } catch (error) {
     state.status = "error";
@@ -53,52 +50,78 @@ async function analyzeCurrentSession(): Promise<PopupState> {
   }
 }
 
+async function analyzeCurrentSession(prompt: string | undefined): Promise<PopupState> {
+  const sessionId = getActiveSessionId();
+  if (!sessionId) {
+    state.status = "error";
+    state.lastError = "No active session";
+    return getPopupState();
+  }
+  return analyze(sessionId, prompt);
+}
+
+async function analyzeArbitrarySession(payload: AnalyzeSessionPayload): Promise<PopupState> {
+  return analyze(payload.sessionId, payload.prompt);
+}
+
+async function handlePageStatus(payload: PageStatusMessagePayload): Promise<PopupState> {
+  const active = await getActiveSession();
+  if (active && active.pageUrl !== payload.pageUrl) {
+    await stopActiveSession();
+    state.resultText = "";
+  }
+  state.status = payload.status;
+  state.lastError = "";
+  return getPopupState();
+}
+
+async function handleCaptionEntry(payload: CaptionEntryMessagePayload): Promise<void> {
+  state.session = await ingestCaption(payload.pageUrl, payload.entry);
+  state.status = "capturing";
+}
+
+async function handleClearResult(): Promise<PopupState> {
+  state.resultText = "";
+  state.lastError = "";
+  const fallback: PluginStatus = getActiveSessionId() ? "capturing" : "on_teams";
+  state.status = fallback;
+  return getPopupState();
+}
+
+async function handleStopCapture(): Promise<PopupState> {
+  await stopActiveSession();
+  state.session = null;
+  state.resultText = "";
+  state.lastError = "";
+  state.status = "on_teams";
+  return getPopupState();
+}
+
 browser.runtime.onMessage.addListener((message: RuntimeMessage) => {
   switch (message.type) {
     case "GET_POPUP_STATE":
-      return Promise.resolve(getPopupState());
+      return getPopupState();
 
     case "GET_SETTINGS":
       return loadSettings();
 
-    case "PAGE_STATUS": {
-      const payload = message.payload as PageStatusMessagePayload;
-      const session = getSession();
+    case "PAGE_STATUS":
+      return handlePageStatus(message.payload);
 
-      if (session && session.pageUrl !== payload.pageUrl) {
-        clearSession();
-        state.session = null;
-        state.resultText = "";
-      }
-
-      state.status = payload.status;
-      state.lastError = "";
-      return Promise.resolve(getPopupState());
-    }
-
-    case "CAPTION_ENTRY": {
-      const payload = message.payload as CaptionEntryMessagePayload;
-      state.session = appendCaption(payload.pageUrl, payload.entry);
-      state.status = "capturing";
-      return Promise.resolve();
-    }
+    case "CAPTION_ENTRY":
+      return handleCaptionEntry(message.payload);
 
     case "ANALYZE_CURRENT_SESSION":
-      return analyzeCurrentSession();
+      return analyzeCurrentSession(message.payload?.prompt);
+
+    case "ANALYZE_SESSION":
+      return analyzeArbitrarySession(message.payload);
 
     case "CLEAR_RESULT":
-      state.resultText = "";
-      state.lastError = "";
-      state.status = getSession() ? "capturing" : "on_teams";
-      return Promise.resolve(getPopupState());
+      return handleClearResult();
 
     case "STOP_CAPTURE":
-      clearSession();
-      state.session = null;
-      state.resultText = "";
-      state.lastError = "";
-      state.status = "on_teams";
-      return Promise.resolve(getPopupState());
+      return handleStopCapture();
 
     default:
       return Promise.resolve();

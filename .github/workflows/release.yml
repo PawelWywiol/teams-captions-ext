@@ -1,0 +1,67 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release (e.g. v0.1.0). Must already exist."
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-14
+    timeout-minutes: 30
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify
+        run: |
+          pnpm typecheck
+          pnpm lint
+          pnpm test
+
+      - name: Build extension bundle
+        run: pnpm build:extension
+
+      - name: Package Chromium zip
+        run: pnpm package:chromium
+
+      - name: Package Safari unsigned .app
+        run: pnpm package:safari
+
+      - name: Rename artifacts with tag
+        run: |
+          mv dist/teams-captions-ext-chromium.zip "dist/teams-captions-ext-chromium-${TAG}.zip"
+          mv dist/teams-captions-ext-safari-unsigned.zip "dist/teams-captions-ext-safari-unsigned-${TAG}.zip"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --generate-notes
+          gh release upload "$TAG" \
+            "dist/teams-captions-ext-chromium-${TAG}.zip" \
+            "dist/teams-captions-ext-safari-unsigned-${TAG}.zip" \
+            --clobber

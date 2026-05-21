@@ -9,20 +9,22 @@ const srcDir = resolve(repoRoot, "src");
 async function main() {
   rmSync(outdir, { force: true, recursive: true });
   mkdirSync(outdir, { recursive: true });
-  mkdirSync(resolve(outdir, "background"), { recursive: true });
-  mkdirSync(resolve(outdir, "content"), { recursive: true });
-  mkdirSync(resolve(outdir, "options"), { recursive: true });
-  mkdirSync(resolve(outdir, "popup"), { recursive: true });
+  for (const sub of ["background", "content", "options", "popup", "sessions", "ui/shared"]) {
+    mkdirSync(resolve(outdir, sub), { recursive: true });
+  }
 
   await build({
     bundle: true,
     entryPoints: {
       "background/index": resolve(srcDir, "background/index.ts"),
       "content/index": resolve(srcDir, "content/index.ts"),
-      "options/index": resolve(srcDir, "options/index.ts"),
-      "popup/index": resolve(srcDir, "popup/index.ts"),
+      "options/index": resolve(srcDir, "options/index.tsx"),
+      "popup/index": resolve(srcDir, "popup/index.tsx"),
+      "sessions/index": resolve(srcDir, "sessions/index.tsx"),
     },
     format: "esm",
+    jsx: "automatic",
+    jsxImportSource: "preact",
     legalComments: "none",
     outbase: srcDir,
     outdir,
@@ -36,6 +38,8 @@ async function main() {
 
   cpSync(resolve(srcDir, "options/index.html"), resolve(outdir, "options/index.html"));
   cpSync(resolve(srcDir, "popup/index.html"), resolve(outdir, "popup/index.html"));
+  cpSync(resolve(srcDir, "sessions/index.html"), resolve(outdir, "sessions/index.html"));
+  cpSync(resolve(srcDir, "ui/shared/tokens.css"), resolve(outdir, "ui/shared/tokens.css"));
 }
 
 main().catch((error) => {

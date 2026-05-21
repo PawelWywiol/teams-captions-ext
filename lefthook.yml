@@ -1,13 +1,13 @@
 pre-commit:
   commands:
     typecheck:
-      run: export PATH="$HOME/.local/share/fnm/node-versions/v20.19.6/installation/bin:$PATH"; if command -v pnpm >/dev/null 2>&1; then pnpm typecheck; else npx --yes pnpm@9.0.0 typecheck; fi
+      run: pnpm typecheck
     lint:
-      run: export PATH="$HOME/.local/share/fnm/node-versions/v20.19.6/installation/bin:$PATH"; if command -v pnpm >/dev/null 2>&1; then pnpm lint; else npx --yes pnpm@9.0.0 lint; fi
+      run: pnpm lint
     format:
-      run: export PATH="$HOME/.local/share/fnm/node-versions/v20.19.6/installation/bin:$PATH"; if command -v pnpm >/dev/null 2>&1; then pnpm format:check; else npx --yes pnpm@9.0.0 format:check; fi
+      run: pnpm format
 
 pre-push:
   commands:
     test:
-      run: export PATH="$HOME/.local/share/fnm/node-versions/v20.19.6/installation/bin:$PATH"; if command -v pnpm >/dev/null 2>&1; then pnpm test; else npx --yes pnpm@9.0.0 test; fi
+      run: pnpm test
