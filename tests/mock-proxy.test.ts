@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { spawn, type ChildProcess } from "node:child_process";
 import { once } from "node:events";
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
+
+const repoRoot = resolve(import.meta.dirname, "..");
+const nodeBinary = existsSync(process.execPath) ? process.execPath : "node";
 
 const processes: ChildProcess[] = [];
 
@@ -38,8 +43,8 @@ async function startMockProxy(overrides: Record<string, string> = {}): Promise<{
   port: number;
 }> {
   const port = 46000 + Math.floor(Math.random() * 1000);
-  const child = spawn(process.execPath, ["./scripts/mock-llm-proxy.mjs"], {
-    cwd: "/home/code/code/teams-captions-ext",
+  const child = spawn(nodeBinary, ["./scripts/mock-llm-proxy.mjs"], {
+    cwd: repoRoot,
     env: {
       ...process.env,
       PORT: String(port),
