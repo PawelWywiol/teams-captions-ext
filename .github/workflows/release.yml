@@ -2,11 +2,12 @@ name: Release
 
 on:
   push:
+    branches: [main]
     tags: ["v*"]
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag to release (e.g. v0.1.0). Must already exist."
+        description: "Tag to release (e.g. v0.1.0). Must already exist or will be created on this run."
         required: true
 
 permissions:
@@ -16,12 +17,11 @@ jobs:
   release:
     runs-on: macos-14
     timeout-minutes: 30
-    env:
-      TAG: ${{ github.event.inputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ env.TAG }}
+          ref: ${{ github.event.inputs.tag || github.ref }}
+          fetch-depth: 0
 
       - uses: pnpm/action-setup@v4
 
@@ -29,6 +29,24 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
+
+      - name: Resolve release metadata
+        id: meta
+        run: |
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            TAG="${{ github.event.inputs.tag }}"
+            PRERELEASE=false
+          elif [[ "${{ github.ref_type }}" == "tag" ]]; then
+            TAG="${{ github.ref_name }}"
+            PRERELEASE=false
+          else
+            TAG="v${PKG_VERSION}-build.${{ github.run_number }}"
+            PRERELEASE=true
+          fi
+          echo "tag=$TAG"             >> "$GITHUB_OUTPUT"
+          echo "prerelease=$PRERELEASE" >> "$GITHUB_OUTPUT"
+          echo "Resolved tag: $TAG (prerelease=$PRERELEASE)"
 
       - name: Select Xcode
         run: sudo xcode-select -s /Applications/Xcode.app
@@ -52,15 +70,30 @@ jobs:
         run: pnpm package:safari
 
       - name: Rename artifacts with tag
+        env:
+          TAG: ${{ steps.meta.outputs.tag }}
         run: |
           mv dist/teams-captions-ext-chromium.zip "dist/teams-captions-ext-chromium-${TAG}.zip"
           mv dist/teams-captions-ext-safari-unsigned.zip "dist/teams-captions-ext-safari-unsigned-${TAG}.zip"
 
-      - name: Create GitHub Release
+      - name: Create or update GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.meta.outputs.tag }}
+          PRERELEASE: ${{ steps.meta.outputs.prerelease }}
         run: |
-          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --generate-notes
+          set -e
+          PRERELEASE_FLAG=""
+          if [[ "$PRERELEASE" == "true" ]]; then
+            PRERELEASE_FLAG="--prerelease"
+          fi
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" \
+              --target "${{ github.sha }}" \
+              --title "$TAG" \
+              --generate-notes \
+              $PRERELEASE_FLAG
+          fi
           gh release upload "$TAG" \
             "dist/teams-captions-ext-chromium-${TAG}.zip" \
             "dist/teams-captions-ext-safari-unsigned-${TAG}.zip" \
