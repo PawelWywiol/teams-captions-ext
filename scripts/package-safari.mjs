@@ -42,7 +42,6 @@ function convert() {
     BUNDLE_ID,
     "--app-name",
     APP_NAME,
-    "--mac-only",
     "--no-open",
     "--force",
     "--swift",
@@ -68,7 +67,11 @@ function listScheme(projectPath) {
   const data = JSON.parse(output);
   const schemes = data.project?.schemes ?? [];
   if (!schemes.length) throw new Error("No scheme detected in generated project");
-  return schemes.find((s) => /macos/i.test(s)) ?? schemes[0];
+  const macScheme =
+    schemes.find((s) => /macos|mac\s*os|\(mac\)/i.test(s)) ??
+    schemes.find((s) => !/\(ios|\(visionos|\(watchos|\(tvos/i.test(s));
+  console.log(`Available schemes: ${schemes.join(", ")} — selected: ${macScheme ?? schemes[0]}`);
+  return macScheme ?? schemes[0];
 }
 
 function xcodeBuild(projectPath, scheme) {
@@ -80,6 +83,8 @@ function xcodeBuild(projectPath, scheme) {
     scheme,
     "-configuration",
     "Release",
+    "-destination",
+    "generic/platform=macOS",
     "-derivedDataPath",
     derivedDir,
     "CODE_SIGN_IDENTITY=",
@@ -90,11 +95,15 @@ function xcodeBuild(projectPath, scheme) {
 }
 
 function locateBuiltApp() {
-  const productsRoot = join(derivedDir, "Build/Products/Release");
-  if (!existsSync(productsRoot)) throw new Error(`Missing build output at ${productsRoot}`);
-  const candidates = readdirSync(productsRoot).filter((n) => n.endsWith(".app"));
-  if (!candidates[0]) throw new Error("Built .app not found");
-  return join(productsRoot, candidates[0]);
+  const productsDir = join(derivedDir, "Build/Products");
+  if (!existsSync(productsDir)) throw new Error(`Missing build output at ${productsDir}`);
+  const releaseDirs = readdirSync(productsDir).filter((n) => n.startsWith("Release"));
+  for (const dir of releaseDirs) {
+    const absolute = join(productsDir, dir);
+    const apps = readdirSync(absolute).filter((n) => n.endsWith(".app"));
+    if (apps[0]) return join(absolute, apps[0]);
+  }
+  throw new Error(`Built .app not found in ${productsDir} (checked: ${releaseDirs.join(", ")})`);
 }
 
 function zipApp(appPath) {
