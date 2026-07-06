@@ -13,16 +13,8 @@ async function main() {
     mkdirSync(resolve(outdir, sub), { recursive: true });
   }
 
-  await build({
+  const common = {
     bundle: true,
-    entryPoints: {
-      "background/index": resolve(srcDir, "background/index.ts"),
-      "content/index": resolve(srcDir, "content/index.ts"),
-      "options/index": resolve(srcDir, "options/index.tsx"),
-      "popup/index": resolve(srcDir, "popup/index.tsx"),
-      "sessions/index": resolve(srcDir, "sessions/index.tsx"),
-    },
-    format: "esm",
     jsx: "automatic",
     jsxImportSource: "preact",
     legalComments: "none",
@@ -31,6 +23,28 @@ async function main() {
     platform: "browser",
     sourcemap: false,
     target: ["safari16", "chrome120"],
+  };
+
+  await build({
+    ...common,
+    entryPoints: {
+      "background/index": resolve(srcDir, "background/index.ts"),
+      "options/index": resolve(srcDir, "options/index.tsx"),
+      "popup/index": resolve(srcDir, "popup/index.tsx"),
+      "sessions/index": resolve(srcDir, "sessions/index.tsx"),
+    },
+    format: "esm",
+  });
+
+  // Content script must be IIFE — it is injected via `new Function(code)()`
+  // workaround for Safari MV3 bug where scripting.executeScript({files}) is a no-op.
+  // ESM `export` syntax breaks Function() parsing.
+  await build({
+    ...common,
+    entryPoints: {
+      "content/index": resolve(srcDir, "content/index.ts"),
+    },
+    format: "iife",
   });
 
   const manifest = JSON.parse(readFileSync(resolve(srcDir, "manifest.json"), "utf8"));

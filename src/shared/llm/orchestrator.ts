@@ -1,5 +1,11 @@
 import { generateAnalysis } from "../../api/client.js";
-import { findChunkByHash, getSessionEntries, saveChunk, saveSummary } from "../db/index.js";
+import {
+  findChunkByHash,
+  getSessionEntries,
+  latestSummary,
+  saveChunk,
+  saveSummary,
+} from "../db/index.js";
 import type { StoredSummary } from "../db/schema.js";
 import { loadSettings } from "../storage.js";
 import type { CaptionEntry } from "../types.js";
@@ -9,23 +15,27 @@ import { buildMapPayload, buildReducePayload } from "./payload.js";
 
 export type AnalyzeOptions = {
   userPrompt?: string;
+  title?: string;
+  includePrevious?: boolean;
 };
 
 export type AnalyzeResult = {
   summary: StoredSummary;
   fromCache: { map: number; total: number };
+  previousIncluded: boolean;
 };
 
 async function mapChunk(
   sessionId: string,
   chunk: CaptionChunk,
   settings: Awaited<ReturnType<typeof loadSettings>>,
+  title: string | undefined,
 ): Promise<{ hash: string; summary: string; cached: boolean }> {
   const hash = await hashChunk(chunk);
   const existing = await findChunkByHash(sessionId, hash);
   if (existing) return { hash, summary: existing.summary, cached: true };
 
-  const summary = await generateAnalysis(settings, buildMapPayload(chunk, settings));
+  const summary = await generateAnalysis(settings, buildMapPayload(chunk, settings, { title }));
   await saveChunk({
     id: crypto.randomUUID(),
     sessionId,
@@ -49,18 +59,20 @@ export async function analyzeSession(
   const chunks = chunkEntries(entries);
   const settings = await loadSettings();
   const userPrompt = options.userPrompt?.trim() ?? "";
+  const title = options.title?.trim() || undefined;
+  const previous = options.includePrevious ? await latestSummary(sessionId) : null;
 
   let cachedHits = 0;
   const mapped: Array<{ hash: string; summary: string }> = [];
   for (const chunk of chunks) {
-    const result = await mapChunk(sessionId, chunk, settings);
+    const result = await mapChunk(sessionId, chunk, settings, title);
     if (result.cached) cachedHits += 1;
     mapped.push({ hash: result.hash, summary: result.summary });
   }
 
   const promptHash = await hashPrompt({
     chunkHashes: mapped.map((m) => m.hash),
-    userPrompt,
+    userPrompt: `${title ?? ""}::${userPrompt}::${previous?.id ?? ""}`,
   });
 
   const content = await generateAnalysis(
@@ -69,6 +81,7 @@ export async function analyzeSession(
       mapped.map((m) => m.summary),
       userPrompt,
       settings,
+      { title, previousSummary: previous?.content },
     ),
   );
 
@@ -82,5 +95,9 @@ export async function analyzeSession(
   };
   await saveSummary(summary);
 
-  return { summary, fromCache: { map: cachedHits, total: chunks.length } };
+  return {
+    summary,
+    fromCache: { map: cachedHits, total: chunks.length },
+    previousIncluded: !!previous,
+  };
 }

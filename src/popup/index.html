@@ -6,8 +6,20 @@
     <title>Teams Captions</title>
     <link rel="stylesheet" href="../ui/shared/tokens.css" />
     <style>
+      html {
+        margin: 0;
+      }
       body {
-        width: 360px;
+        margin: 0;
+        width: 420px;
+        max-height: 600px;
+        overflow: hidden;
+      }
+      /* Scroll the inner wrapper so tall content (Debug tab) never inflates the
+         document height the Safari popover measures, which otherwise clips it. */
+      .popup {
+        max-height: 600px;
+        overflow-y: auto;
         padding: var(--space-4);
       }
     </style>

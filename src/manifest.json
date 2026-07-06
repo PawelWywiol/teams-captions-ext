@@ -3,8 +3,13 @@
   "name": "Teams Captions Extension",
   "version": "0.1.0",
   "description": "Capture Teams captions and send them on demand to a compatible LLM proxy.",
-  "permissions": ["storage"],
-  "host_permissions": ["https://teams.microsoft.com/*", "https://*.teams.microsoft.com/*"],
+  "permissions": ["storage", "scripting", "tabs"],
+  "host_permissions": [
+    "https://teams.microsoft.com/*",
+    "https://*.teams.microsoft.com/*",
+    "https://teams.cloud.microsoft/*",
+    "https://*.teams.cloud.microsoft/*"
+  ],
   "optional_host_permissions": [
     "http://localhost/*",
     "http://127.0.0.1/*",
@@ -39,7 +44,12 @@
   "options_page": "options/index.html",
   "content_scripts": [
     {
-      "matches": ["https://teams.microsoft.com/*", "https://*.teams.microsoft.com/*"],
+      "matches": [
+        "https://teams.microsoft.com/*",
+        "https://*.teams.microsoft.com/*",
+        "https://teams.cloud.microsoft/*",
+        "https://*.teams.cloud.microsoft/*"
+      ],
       "js": ["content/index.js"],
       "run_at": "document_idle"
     }

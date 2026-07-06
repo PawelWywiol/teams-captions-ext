@@ -55,6 +55,35 @@ export function EmptyState({
   );
 }
 
+export type TabItem<T extends string> = { id: T; label: string };
+
+export function Tabs<T extends string>({
+  items,
+  value,
+  onChange,
+}: {
+  items: ReadonlyArray<TabItem<T>>;
+  value: T;
+  onChange: (next: T) => void;
+}): JSX.Element {
+  return (
+    <div class="row" role="tablist" data-testid="tabs">
+      {items.map((item) => (
+        <Button
+          key={item.id}
+          variant={value === item.id ? "primary" : "ghost"}
+          role="tab"
+          aria-selected={value === item.id}
+          data-tab={item.id}
+          onClick={() => onChange(item.id)}
+        >
+          {item.label}
+        </Button>
+      ))}
+    </div>
+  );
+}
+
 type StatusKind = "idle" | "capturing" | "analyzing" | "error";
 
 export function StatusBadge({

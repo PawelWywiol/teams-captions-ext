@@ -1,3 +1,4 @@
+export const CAPTION_LIST_SELECTOR = '[data-tid="closed-caption-v2-virtual-list-content"]';
 export const CAPTION_MARKER_SELECTOR = '[data-tid="closed-captions-v2-items-renderer"]';
 export const CAPTION_AUTHOR_SELECTOR = '[data-tid="author"]';
 export const CAPTION_TEXT_SELECTOR = '[data-tid="closed-caption-text"]';
@@ -52,31 +53,11 @@ export function hasUnexpectedReadableText(element: Element): boolean {
   return false;
 }
 
-function isCaptionRelatedBranch(element: Element): boolean {
-  return Boolean(
-    element.matches(CAPTION_MARKER_SELECTOR) ||
-    element.matches(CAPTION_TEXT_SELECTOR) ||
-    element.matches(CAPTION_AUTHOR_SELECTOR) ||
-    element.querySelector(CAPTION_MARKER_SELECTOR) ||
-    element.querySelector(CAPTION_TEXT_SELECTOR) ||
-    element.querySelector(CAPTION_AUTHOR_SELECTOR),
-  );
-}
-
-export function hasBlockingSiblingBranches(element: Element): boolean {
-  const relevantChildren = Array.from(element.children).filter((child) =>
-    isCaptionRelatedBranch(child),
-  );
-
-  return relevantChildren.length > 0 && relevantChildren.length !== element.children.length;
-}
-
 export function isValidCaptionBoundary(element: Element): boolean {
-  return (
-    hasRequiredCaptionNodes(element) &&
-    !hasBlockingSiblingBranches(element) &&
-    !hasUnexpectedReadableText(element)
-  );
+  // A boundary is one caption item (1 marker + 1 text) with no foreign readable
+  // text. We intentionally do NOT reject non-text sibling branches: real Teams
+  // caption items wrap the text in an avatar, empty divs and tabster focus stubs.
+  return hasRequiredCaptionNodes(element) && !hasUnexpectedReadableText(element);
 }
 
 export function isSingleCaptionItemContainer(element: Element): boolean {

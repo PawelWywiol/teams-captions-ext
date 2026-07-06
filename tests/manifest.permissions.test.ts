@@ -14,6 +14,8 @@ describe("manifest host permissions", () => {
     expect(manifest.host_permissions).toEqual([
       "https://teams.microsoft.com/*",
       "https://*.teams.microsoft.com/*",
+      "https://teams.cloud.microsoft/*",
+      "https://*.teams.cloud.microsoft/*",
     ]);
 
     expect(manifest.optional_host_permissions).toEqual([

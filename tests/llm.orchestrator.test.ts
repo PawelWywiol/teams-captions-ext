@@ -101,6 +101,56 @@ describe("LLM orchestrator", () => {
     expect(generateAnalysis).not.toHaveBeenCalled();
   });
 
+  it("includes previous summary in reduce payload when includePrevious=true", async () => {
+    const { analyzeSession } = await import("../src/shared/llm/orchestrator.js");
+    generateAnalysis
+      .mockResolvedValueOnce("map-1")
+      .mockResolvedValueOnce("first-summary")
+      .mockResolvedValueOnce("second-summary");
+
+    const s = await createSession("https://teams.microsoft.com/m/prev");
+    await appendEntry(s.id, makeEntry("hello", 0));
+
+    const first = await analyzeSession(s.id, { userPrompt: "" });
+    expect(first.previousIncluded).toBe(false);
+
+    const second = await analyzeSession(s.id, {
+      userPrompt: "follow-up",
+      title: "Sprint review",
+      includePrevious: true,
+    });
+    expect(second.previousIncluded).toBe(true);
+    expect(second.summary.content).toBe("second-summary");
+
+    const reduceCall = generateAnalysis.mock.calls.at(-1);
+    expect(reduceCall).toBeTruthy();
+    const payload = reduceCall?.[1] as { messages: Array<{ content: string }> };
+    const userContent = payload.messages[1]?.content ?? "";
+    expect(userContent).toContain("Title: Sprint review");
+    expect(userContent).toContain("PREVIOUS_SUMMARY_BEGIN");
+    expect(userContent).toContain("first-summary");
+    expect(userContent).toContain("Additional instructions:");
+  });
+
+  it("does not include previous summary when includePrevious=false", async () => {
+    const { analyzeSession } = await import("../src/shared/llm/orchestrator.js");
+    generateAnalysis
+      .mockResolvedValueOnce("map-1")
+      .mockResolvedValueOnce("first-summary")
+      .mockResolvedValueOnce("second-summary");
+
+    const s = await createSession("https://teams.microsoft.com/m/noprev");
+    await appendEntry(s.id, makeEntry("hello", 0));
+
+    await analyzeSession(s.id, {});
+    const second = await analyzeSession(s.id, { userPrompt: "x" });
+    expect(second.previousIncluded).toBe(false);
+
+    const reduceCall = generateAnalysis.mock.calls.at(-1);
+    const payload = reduceCall?.[1] as { messages: Array<{ content: string }> };
+    expect(payload.messages[1]?.content ?? "").not.toContain("PREVIOUS_SUMMARY_BEGIN");
+  });
+
   it("keeps only the latest summary per session", async () => {
     const { analyzeSession } = await import("../src/shared/llm/orchestrator.js");
     generateAnalysis

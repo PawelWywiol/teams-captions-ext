@@ -35,11 +35,53 @@ export type CaptionSession = {
   entries: CaptionEntry[];
 };
 
+export type DiagnosticsError = {
+  at: string;
+  scope: "start" | "parse" | "tick";
+  message: string;
+};
+
+export type DiagnosticsCaptionPreview = {
+  speaker: string;
+  text: string;
+};
+
+export type DiagnosticsSessionInfo = {
+  id: string;
+  pageUrl: string;
+  startedAt: string;
+  updatedAt: string;
+  entriesCount: number;
+};
+
+export type DiagnosticsSnapshot = {
+  contentScriptLoaded: boolean;
+  pageUrl: string;
+  isTeamsPage: boolean;
+  captionsRootFound: boolean;
+  observerActive: boolean;
+  markersCount: number;
+  textNodesCount: number;
+  lastEntryAt: string | null;
+  lastTickAt: string;
+  lastErrors: DiagnosticsError[];
+  recentTexts: DiagnosticsCaptionPreview[];
+};
+
+export type DiagnosticsView = DiagnosticsSnapshot & {
+  receivedAt: string | null;
+  session: DiagnosticsSessionInfo | null;
+  extensionVersion: string;
+  hasPreviousSummary: boolean;
+};
+
 export type PopupState = {
   status: PluginStatus;
   entriesCount: number;
   lastError?: string;
   resultText?: string;
+  hasPreviousSummary?: boolean;
+  defaults?: { title: string; prompt: string };
 };
 
 export type BackgroundState = {
@@ -59,17 +101,50 @@ export type PageStatusMessagePayload = {
   status: PluginStatus;
 };
 
-export type AnalyzeSessionPayload = {
-  sessionId: string;
+export type DiagnosticsReportPayload = {
+  snapshot: DiagnosticsSnapshot;
+};
+
+export type AnalyzeOptionsPayload = {
   prompt?: string;
+  title?: string;
+  includePrevious?: boolean;
+};
+
+export type AnalyzeSessionPayload = AnalyzeOptionsPayload & {
+  sessionId: string;
 };
 
 export type RuntimeMessage =
   | { type: "GET_POPUP_STATE" }
   | { type: "GET_SETTINGS" }
+  | { type: "GET_DIAGNOSTICS" }
   | { type: "CAPTION_ENTRY"; payload: CaptionEntryMessagePayload }
   | { type: "PAGE_STATUS"; payload: PageStatusMessagePayload }
-  | { type: "ANALYZE_CURRENT_SESSION"; payload?: { prompt?: string } }
+  | { type: "DIAGNOSTICS_REPORT"; payload: DiagnosticsReportPayload }
+  | { type: "ANALYZE_CURRENT_SESSION"; payload?: AnalyzeOptionsPayload }
   | { type: "ANALYZE_SESSION"; payload: AnalyzeSessionPayload }
   | { type: "CLEAR_RESULT" }
-  | { type: "STOP_CAPTURE" };
+  | { type: "STOP_CAPTURE" }
+  | { type: "FORCE_INJECT" };
+
+export type ForceInjectProbe = {
+  sentinelSet: boolean;
+  bodyDatasetLoaded: string | null;
+  bodyDatasetHref: string | null;
+  htmlDatasetLoaded: string | null;
+  documentReadyState: string;
+  hasBody: boolean;
+  markersInDom: number;
+  textNodesInDom: number;
+  ts: number;
+  error?: string;
+};
+
+export type ForceInjectResult = {
+  ok: boolean;
+  message: string;
+  tabId?: number;
+  tabUrl?: string;
+  probe?: ForceInjectProbe;
+};

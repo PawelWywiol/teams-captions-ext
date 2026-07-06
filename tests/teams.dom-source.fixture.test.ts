@@ -66,6 +66,88 @@ function buildSingleCaptionDocument(withAuthor = true, useLegacyMessageClass = t
   return new JSDOM(html).window.document;
 }
 
+// Mirrors a live teams.cloud.microsoft caption item: the marker is the avatar,
+// the item holds an empty div + tabster focus stubs as non-text siblings, and
+// each item is buried under several flex wrappers inside the virtual list.
+function realCaptionWrapper({ speaker, text }: { speaker: string; text: string }): string {
+  return `
+    <div class="fui-Flex ___1ccp5kb">
+      <div class="fui-Flex ___1azgi2u">
+        <div class="fui-Flex ___1fa4cgz">
+          <div class="fui-ChatMessageCompact ___1pqwuks f13qh94s">
+            <div></div>
+            <div class="fui-ChatMessageCompact__avatar">
+              <div class="lpcCommonWeb-hoverTarget" data-tid="closed-captions-v2-items-renderer">
+                <span role="presentation" class="fui-Avatar">
+                  <img role="presentation" aria-hidden="true" class="fui-Avatar__image" src="https://example.test/a.png" />
+                </span>
+              </div>
+            </div>
+            <i tabindex="0" role="none" data-tabster-dummy="" aria-hidden="true"></i>
+            <div data-is-focusable="false" tabindex="0" class="fui-ChatMessageCompact__body">
+              <div>
+                <div>
+                  <span class="fui-ChatMessageCompact__author">
+                    <span dir="auto" data-tid="author" class="fui-StyledText">${speaker}</span>
+                  </span>
+                </div>
+                <div class="fui-Flex">
+                  <span dir="auto" data-tid="closed-caption-text" class="fui-StyledText">${text}</span>
+                </div>
+              </div>
+            </div>
+            <i tabindex="0" role="none" data-tabster-dummy="" aria-hidden="true"></i>
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+
+function buildRealTeamsCaptionsDocument(items: Array<{ speaker: string; text: string }>): Document {
+  const html = `
+    <div data-tid="closed-caption-renderer-wrapper">
+      <div data-tid="closed-caption-v2-window-wrapper">
+        <div data-tid="closed-caption-v2-virtual-list-content">
+          <div class="fui-Flex ___4kgxud0">
+            ${items.map(realCaptionWrapper).join("")}
+          </div>
+        </div>
+      </div>
+    </div>`;
+
+  return new JSDOM(html).window.document;
+}
+
+async function withDomGlobals(
+  document: Document,
+  fn: (source: DomCaptionSource, observed: CaptionEntry[]) => Promise<void> | void,
+): Promise<void> {
+  const observed: CaptionEntry[] = [];
+  const source = new DomCaptionSource((entry) => observed.push(entry));
+  const prevDocument = globalThis.document;
+  const prevMutationObserver = globalThis.MutationObserver;
+  const prevHTMLElement = globalThis.HTMLElement;
+  const prevCrypto = Object.getOwnPropertyDescriptor(globalThis, "crypto");
+
+  globalThis.document = document;
+  globalThis.MutationObserver = document.defaultView!.MutationObserver;
+  globalThis.HTMLElement = document.defaultView!.HTMLElement;
+  Object.defineProperty(globalThis, "crypto", {
+    configurable: true,
+    value: document.defaultView!.crypto,
+  });
+
+  try {
+    await fn(source, observed);
+  } finally {
+    source.stop();
+    globalThis.document = prevDocument;
+    globalThis.MutationObserver = prevMutationObserver;
+    globalThis.HTMLElement = prevHTMLElement;
+    if (prevCrypto) Object.defineProperty(globalThis, "crypto", prevCrypto);
+  }
+}
+
 describe("teams DOM caption extraction", () => {
   it("finds the Teams captions root in the fixture", () => {
     const document = loadFixtureDocument();
@@ -101,6 +183,42 @@ describe("teams DOM caption extraction", () => {
 
     expect(root).not.toBeNull();
     expect(extractCaptionEntriesFromRoot(root as HTMLElement)).toHaveLength(1);
+  });
+
+  it("captures real Teams caption items wrapped with avatar and tabster focus stubs", () => {
+    const document = buildRealTeamsCaptionsDocument([
+      { speaker: "Paweł Wywioł", text: "Warstwa 3." },
+      { speaker: "Alex Kim", text: "Second caption line." },
+    ]);
+    const root = findCaptionsRoot(document);
+
+    expect(root).not.toBeNull();
+    expect(extractCaptionEntriesFromRoot(root as HTMLElement)).toMatchObject([
+      { speakerOriginal: "Paweł Wywioł", text: "Warstwa 3." },
+      { speakerOriginal: "Alex Kim", text: "Second caption line." },
+    ]);
+  });
+
+  it("keeps capturing sibling captions added after starting with a single item", async () => {
+    const document = buildRealTeamsCaptionsDocument([
+      { speaker: "Paweł Wywioł", text: "Raz 2 3." },
+    ]);
+    await withDomGlobals(document, async (source, observed) => {
+      expect(source.start()).toBe(true);
+
+      // New captions arrive as siblings high up in the list, far above the first
+      // item's own wrappers — the regression that made only the first stick.
+      const inner = document.querySelector(
+        '[data-tid="closed-caption-v2-virtual-list-content"] > div',
+      ) as HTMLElement;
+      inner.insertAdjacentHTML(
+        "beforeend",
+        realCaptionWrapper({ speaker: "Paweł Wywioł", text: "Powtarzam." }),
+      );
+      await Promise.resolve();
+
+      expect(observed.map((entry) => entry.text)).toEqual(["Raz 2 3.", "Powtarzam."]);
+    });
   });
 
   it("extracts captions without relying on legacy Teams message classes", () => {
@@ -345,11 +463,11 @@ describe("teams DOM caption extraction", () => {
       list.appendChild(wrapper);
       await Promise.resolve();
 
-      expect(observed).toHaveLength(1);
-      expect(observed[0]).toMatchObject({
-        speakerOriginal: "Second Speaker",
-        text: "Second caption line",
-      });
+      expect(observed).toHaveLength(2);
+      expect(observed).toMatchObject([
+        { speakerOriginal: "Solo Speaker", text: "Only caption line" },
+        { speakerOriginal: "Second Speaker", text: "Second caption line" },
+      ]);
     } finally {
       source.stop();
       globalThis.document = previousDocument;
@@ -407,16 +525,11 @@ describe("teams DOM caption extraction", () => {
       list.appendChild(wrapper);
       await Promise.resolve();
 
-      expect(observed).toHaveLength(2);
+      expect(observed).toHaveLength(3);
       expect(observed).toMatchObject([
-        {
-          speakerOriginal: "Second Speaker",
-          text: "Second caption line",
-        },
-        {
-          speakerOriginal: "Third Speaker",
-          text: "Third caption line",
-        },
+        { speakerOriginal: "Solo Speaker", text: "Only caption line" },
+        { speakerOriginal: "Second Speaker", text: "Second caption line" },
+        { speakerOriginal: "Third Speaker", text: "Third caption line" },
       ]);
     } finally {
       source.stop();
@@ -467,11 +580,11 @@ describe("teams DOM caption extraction", () => {
       list.appendChild(sibling);
       await Promise.resolve();
 
-      expect(observed).toHaveLength(1);
-      expect(observed[0]).toMatchObject({
-        speakerOriginal: "Second Speaker",
-        text: "Second caption line",
-      });
+      expect(observed).toHaveLength(2);
+      expect(observed).toMatchObject([
+        { speakerOriginal: "Solo Speaker", text: "Only caption line" },
+        { speakerOriginal: "Second Speaker", text: "Second caption line" },
+      ]);
     } finally {
       source.stop();
       globalThis.document = previousDocument;
@@ -481,5 +594,38 @@ describe("teams DOM caption extraction", () => {
         Object.defineProperty(globalThis, "crypto", previousCryptoDescriptor);
       }
     }
+  });
+
+  it("emits captions already present in the DOM when capture starts", async () => {
+    await withDomGlobals(buildSingleCaptionDocument(), (source, observed) => {
+      expect(source.start()).toBe(true);
+      expect(observed).toHaveLength(1);
+      expect(observed[0]).toMatchObject({
+        speakerOriginal: "Solo Speaker",
+        text: "Only caption line",
+      });
+    });
+  });
+
+  it("captures in-place caption text updates via characterData", async () => {
+    const document = buildSingleCaptionDocument();
+    await withDomGlobals(document, async (source, observed) => {
+      expect(source.start()).toBe(true);
+      const textNode = document.querySelector('[data-tid="closed-caption-text"]')
+        ?.firstChild as Text;
+      textNode.data = "Only caption line, extended live";
+      await Promise.resolve();
+      expect(observed.map((entry) => entry.text)).toContain("Only caption line, extended live");
+    });
+  });
+
+  it("becomes unhealthy after its captions root detaches", async () => {
+    const document = buildSingleCaptionDocument();
+    await withDomGlobals(document, (source) => {
+      expect(source.start()).toBe(true);
+      expect(source.isHealthy()).toBe(true);
+      document.querySelector(".fui-Primitive")?.remove();
+      expect(source.isHealthy()).toBe(false);
+    });
   });
 });

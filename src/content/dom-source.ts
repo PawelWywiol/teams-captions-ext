@@ -1,11 +1,11 @@
 import type { CaptionEntry } from "../shared/types.js";
 import {
   CAPTION_AUTHOR_SELECTOR,
+  CAPTION_LIST_SELECTOR,
   CAPTION_MARKER_SELECTOR,
   CAPTION_TEXT_SELECTOR,
   findCaptionMarkers,
   findCaptionTextNodes,
-  hasBlockingSiblingBranches,
   hasUnexpectedReadableText,
   isValidCaptionBoundary,
 } from "./selectors.js";
@@ -23,7 +23,7 @@ function resolveCaptionBoundary(
       return current as HTMLElement;
     }
 
-    if (hasBlockingSiblingBranches(current) || hasUnexpectedReadableText(current)) {
+    if (hasUnexpectedReadableText(current)) {
       return INVALID_CAPTION_PATH;
     }
 
@@ -46,7 +46,7 @@ function findContainerByMarker(marker: Element | null): HTMLElement | null {
       return current as HTMLElement;
     }
 
-    if (hasBlockingSiblingBranches(current) || hasUnexpectedReadableText(current)) {
+    if (hasUnexpectedReadableText(current)) {
       return null;
     }
 
@@ -122,7 +122,7 @@ function findObservationRoot(root: HTMLElement): HTMLElement {
 }
 
 export function extractCaptionEntriesFromRoot(root: HTMLElement): CaptionEntry[] {
-  if (hasBlockingSiblingBranches(root) || hasUnexpectedReadableText(root)) {
+  if (hasUnexpectedReadableText(root)) {
     return [];
   }
 
@@ -151,11 +151,35 @@ export function extractCaptionEntriesFromRoot(root: HTMLElement): CaptionEntry[]
   return entries;
 }
 
+export type CaptionSourceStats = {
+  rootFound: boolean;
+  observerActive: boolean;
+  markersCount: number;
+  textNodesCount: number;
+};
+
 export class DomCaptionSource {
   private observer: MutationObserver | null = null;
   private recentFingerprints: string[] = [];
+  private rootRef: HTMLElement | null = null;
 
   constructor(private readonly onEntry: OnEntry) {}
+
+  getStats(): CaptionSourceStats {
+    const scope: ParentNode = this.rootRef ?? document;
+    return {
+      rootFound: !!this.rootRef,
+      observerActive: !!this.observer,
+      markersCount: scope.querySelectorAll(CAPTION_MARKER_SELECTOR).length,
+      textNodesCount: scope.querySelectorAll(CAPTION_TEXT_SELECTOR).length,
+    };
+  }
+
+  // Capture is unhealthy once the root detaches (Teams re-rendered the captions
+  // subtree); the tick uses this to re-attach instead of staying orphaned.
+  isHealthy(): boolean {
+    return !!this.observer && !!this.rootRef && this.rootRef.isConnected;
+  }
 
   private rememberFingerprint(fingerprint: string): void {
     this.recentFingerprints.push(fingerprint);
@@ -197,11 +221,29 @@ export class DomCaptionSource {
 
   start(): boolean {
     const root = findCaptionsRoot();
-    if (!root) return false;
-    const observationRoot = findObservationRoot(root);
+    if (!root) {
+      this.rootRef = null;
+      return false;
+    }
+    // Observe the whole captions list, not a single item: Teams appends each new
+    // caption as a sibling, so a per-item root would miss everything after the
+    // first. Fall back to the heuristic ancestor when the list tid is absent.
+    const observationRoot =
+      root.closest<HTMLElement>(CAPTION_LIST_SELECTOR) ?? findObservationRoot(root);
+    this.rootRef = observationRoot;
 
     this.observer = new MutationObserver((mutations) => {
       for (const mutation of mutations) {
+        if (mutation.type === "characterData") {
+          const host = mutation.target.parentElement;
+          if (host) {
+            for (const entry of this.parseNode(host)) {
+              this.onEntry(entry);
+            }
+          }
+          continue;
+        }
+
         for (const node of mutation.addedNodes) {
           if (!(node instanceof HTMLElement)) continue;
 
@@ -215,7 +257,14 @@ export class DomCaptionSource {
     this.observer.observe(observationRoot, {
       childList: true,
       subtree: true,
+      characterData: true,
     });
+
+    // Capture captions already present when the observer attaches (e.g. CC was
+    // enabled before start). Dedup stops the observer from re-emitting them.
+    for (const entry of this.parseNode(observationRoot)) {
+      this.onEntry(entry);
+    }
 
     return true;
   }
@@ -223,5 +272,6 @@ export class DomCaptionSource {
   stop(): void {
     this.observer?.disconnect();
     this.observer = null;
+    this.rootRef = null;
   }
 }
