@@ -3,7 +3,7 @@ import "fake-indexeddb/auto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/preact";
 import {
-  appendEntry,
+  upsertEntry,
   createSession,
   getDb,
   saveSummary,
@@ -54,7 +54,7 @@ describe("sessions summary panel", () => {
 
   it("renders stored summary as raw text and copies on Copy click", async () => {
     const session = await createSession("https://teams.microsoft.com/m/1");
-    await appendEntry(session.id, makeEntry("hi", "2026-05-21T10:00:00.000Z"));
+    await upsertEntry(session.id, makeEntry("hi", "2026-05-21T10:00:00.000Z"));
     await saveSummary({
       id: crypto.randomUUID(),
       sessionId: session.id,
@@ -100,7 +100,7 @@ describe("sessions summary panel", () => {
 
   it("dispatches ANALYZE_SESSION with user prompt", async () => {
     const session = await createSession("https://teams.microsoft.com/m/2");
-    await appendEntry(session.id, makeEntry("hi", "2026-05-21T10:00:00.000Z"));
+    await upsertEntry(session.id, makeEntry("hi", "2026-05-21T10:00:00.000Z"));
 
     const sendMessage = vi.fn(() => Promise.resolve({ status: "result_ready", entriesCount: 1 }));
     (

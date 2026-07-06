@@ -2,7 +2,7 @@
 import "fake-indexeddb/auto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/preact";
-import { appendEntry, createSession, getDb, setDbForTesting } from "../src/shared/db/index.js";
+import { upsertEntry, createSession, getDb, setDbForTesting } from "../src/shared/db/index.js";
 import { createDatabase } from "../src/shared/db/schema.js";
 import type { CaptionEntry } from "../src/shared/types.js";
 
@@ -34,8 +34,8 @@ describe("sessions app", () => {
 
   it("lists sessions and shows their transcript when selected", async () => {
     const a = await createSession("https://teams.microsoft.com/meet/a");
-    await appendEntry(a.id, makeEntry({ text: "alpha", ts: "2026-05-21T10:00:00.000Z" }));
-    await appendEntry(a.id, makeEntry({ text: "beta", ts: "2026-05-21T10:00:01.000Z" }));
+    await upsertEntry(a.id, makeEntry({ text: "alpha", ts: "2026-05-21T10:00:00.000Z" }));
+    await upsertEntry(a.id, makeEntry({ text: "beta", ts: "2026-05-21T10:00:01.000Z" }));
 
     const { App } = await import("../src/ui/sessions/App.js");
     const { container } = render(<App />);
@@ -50,6 +50,7 @@ describe("sessions app", () => {
       expect(transcript?.textContent).toContain("alpha");
       expect(transcript?.textContent).toContain("beta");
     });
+    expect(container.querySelector('[data-testid="copy-transcript"]')).toBeTruthy();
   });
 
   it("filters sessions by search query", async () => {

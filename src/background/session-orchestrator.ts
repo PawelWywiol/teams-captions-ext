@@ -1,11 +1,12 @@
 import { isDuplicate } from "../content/dedup.js";
 import {
-  appendEntry,
+  upsertEntry,
   createSession,
   endSession,
   findActiveSessionForUrl,
   getRecentEntries,
   loadSession,
+  putSession,
 } from "../shared/db/index.js";
 import type { StoredSession } from "../shared/db/schema.js";
 import type { CaptionEntry, CaptionSession } from "../shared/types.js";
@@ -29,13 +30,22 @@ async function resolveSessionForUrl(pageUrl: string): Promise<StoredSession> {
 
 export async function ingestCaption(pageUrl: string, entry: CaptionEntry): Promise<CaptionSession> {
   const session = await resolveSessionForUrl(pageUrl);
-  const recent = await getRecentEntries(session.id);
+  // Window 20 covers the backlog of already-visible captions re-emitted with
+  // fresh ids after a content-script re-inject.
+  const recent = await getRecentEntries(session.id, 20);
 
-  if (!isDuplicate(recent, entry)) {
-    await appendEntry(session.id, entry);
+  if (!isDuplicate(recent, entry, 20)) {
+    await upsertEntry(session.id, entry);
   }
 
-  const loaded = await loadSession(session.id);
+  let loaded = await loadSession(session.id);
+  if (!loaded) {
+    // The session row can vanish while entries keep persisting (seen with a
+    // wedged IndexedDB); restore it from the in-memory copy instead of
+    // failing every subsequent caption.
+    await putSession(session);
+    loaded = await loadSession(session.id);
+  }
   if (!loaded) {
     throw new Error("Active session disappeared after write");
   }

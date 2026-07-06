@@ -61,6 +61,30 @@ describe("session orchestrator", () => {
     expect(s.entries).toHaveLength(1);
   });
 
+  it("restores the session row when it vanishes mid-capture", async () => {
+    const url = "https://teams.microsoft.com/m/1";
+    const first = await ingestCaption(url, makeEntry({ text: "one" }));
+    await getDb().sessions.delete(first.sessionId);
+
+    const healed = await ingestCaption(url, makeEntry({ text: "two" }));
+    expect(healed.sessionId).toBe(first.sessionId);
+    expect(healed.entries.map((e) => e.text)).toEqual(["one", "two"]);
+    expect(await listSessions()).toHaveLength(1);
+  });
+
+  it("upserts progressive updates of one utterance into a single row", async () => {
+    const id = crypto.randomUUID();
+    const ts = "2026-05-21T10:00:00.000Z";
+    const url = "https://teams.microsoft.com/m/1";
+
+    await ingestCaption(url, makeEntry({ id, ts, text: "raz" }));
+    await ingestCaption(url, makeEntry({ id, ts, text: "raz dwa" }));
+    const s = await ingestCaption(url, makeEntry({ id, ts, text: "raz dwa trzy" }));
+
+    expect(s.entries).toHaveLength(1);
+    expect(s.entries[0]).toMatchObject({ id, ts, text: "raz dwa trzy" });
+  });
+
   it("starts new session when pageUrl changes and ends previous", async () => {
     await ingestCaption("https://teams.microsoft.com/m/1", makeEntry({ text: "first" }));
     const second = await ingestCaption(

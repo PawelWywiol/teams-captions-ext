@@ -1,7 +1,7 @@
 import "fake-indexeddb/auto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  appendEntry,
+  upsertEntry,
   createSession,
   getDb,
   latestSummary,
@@ -62,8 +62,8 @@ describe("LLM orchestrator", () => {
     generateAnalysis.mockResolvedValueOnce("map-1").mockResolvedValueOnce("reduce-final");
 
     const s = await createSession("https://teams.microsoft.com/m/1");
-    await appendEntry(s.id, makeEntry("hi", 0));
-    await appendEntry(s.id, makeEntry("there", 1));
+    await upsertEntry(s.id, makeEntry("hi", 0));
+    await upsertEntry(s.id, makeEntry("there", 1));
 
     const result = await analyzeSession(s.id, { userPrompt: "" });
     expect(result.summary.content).toBe("reduce-final");
@@ -81,7 +81,7 @@ describe("LLM orchestrator", () => {
       .mockResolvedValueOnce("reduce-B");
 
     const s = await createSession("https://teams.microsoft.com/m/1");
-    await appendEntry(s.id, makeEntry("hello", 0));
+    await upsertEntry(s.id, makeEntry("hello", 0));
 
     const first = await analyzeSession(s.id, { userPrompt: "" });
     expect(first.fromCache.map).toBe(0);
@@ -109,7 +109,7 @@ describe("LLM orchestrator", () => {
       .mockResolvedValueOnce("second-summary");
 
     const s = await createSession("https://teams.microsoft.com/m/prev");
-    await appendEntry(s.id, makeEntry("hello", 0));
+    await upsertEntry(s.id, makeEntry("hello", 0));
 
     const first = await analyzeSession(s.id, { userPrompt: "" });
     expect(first.previousIncluded).toBe(false);
@@ -140,7 +140,7 @@ describe("LLM orchestrator", () => {
       .mockResolvedValueOnce("second-summary");
 
     const s = await createSession("https://teams.microsoft.com/m/noprev");
-    await appendEntry(s.id, makeEntry("hello", 0));
+    await upsertEntry(s.id, makeEntry("hello", 0));
 
     await analyzeSession(s.id, {});
     const second = await analyzeSession(s.id, { userPrompt: "x" });
@@ -159,7 +159,7 @@ describe("LLM orchestrator", () => {
       .mockResolvedValueOnce("reduce-2");
 
     const s = await createSession("https://teams.microsoft.com/m/1");
-    await appendEntry(s.id, makeEntry("foo", 0));
+    await upsertEntry(s.id, makeEntry("foo", 0));
 
     await analyzeSession(s.id);
     await analyzeSession(s.id, { userPrompt: "new" });

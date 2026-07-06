@@ -14,7 +14,7 @@ Each release on the [GitHub Releases page](https://github.com/PawelWywiol/teams-
 
 | File                                            | Browser                                  | Notes                                                              |
 | ----------------------------------------------- | ---------------------------------------- | ------------------------------------------------------------------ |
-| `teams-captions-ext-chromium-<TAG>.zip`         | Chrome / Edge / Brave / Arc / Chromium   | Load unpacked from the extracted folder.                           |
+| `teams-captions-ext-chromium-<TAG>.zip`         | Chrome / Edge / Brave / Arc / Chromium   | See [`docs/install-chrome.md`](./docs/install-chrome.md).          |
 | `teams-captions-ext-safari-unsigned-<TAG>.zip`  | Safari (macOS, developer mode)           | See [`docs/install-safari.md`](./docs/install-safari.md).          |
 
 You also need an LLM proxy reachable at the URL you configure in **Settings**. The intended one is [`cli-llm-proxy`](https://github.com/PawelWywiol/cli-llm-proxy) (Fastify on `127.0.0.1:11434` with optional bearer auth, Claude/Copilot/Gemini adapters).

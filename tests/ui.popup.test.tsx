@@ -192,7 +192,8 @@ describe("popup app", () => {
       expect(container.querySelector('[data-testid="debug-panel"]')).toBeTruthy();
     });
     expect(container.textContent).toContain("Content script not running");
-    expect(container.textContent).toContain("Safari → Settings → Extensions");
+    expect(container.textContent).toContain("reload the Teams tab");
+    expect(container.textContent).toContain("Settings → Extensions");
   });
 
   it("Captions tab lists captured captions of the active session", async () => {
@@ -202,11 +203,11 @@ describe("popup app", () => {
     db.setDbForTesting(createDatabase(`popup-${crypto.randomUUID()}`));
     try {
       const session = await db.createSession("https://teams.microsoft.com/meet/x");
-      await db.appendEntry(
+      await db.upsertEntry(
         session.id,
         makeEntry({ speakerOriginal: "Alice", text: "alpha line", ts: "2026-05-22T10:00:00.000Z" }),
       );
-      await db.appendEntry(
+      await db.upsertEntry(
         session.id,
         makeEntry({ speakerOriginal: "Bob", text: "beta line", ts: "2026-05-22T10:00:01.000Z" }),
       );
@@ -224,6 +225,7 @@ describe("popup app", () => {
         expect(preview?.textContent).toContain("Bob");
         expect(preview?.textContent).toContain("beta line");
       });
+      expect(container.querySelector('[data-testid="copy-transcript"]')).toBeTruthy();
     } finally {
       const opened = db.getDb();
       opened.close();

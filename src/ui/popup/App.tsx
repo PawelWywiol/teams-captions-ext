@@ -1,5 +1,5 @@
 import { signal } from "@preact/signals";
-import { useEffect } from "preact/hooks";
+import { useEffect, useState } from "preact/hooks";
 import { watchSessionEntries, watchSessions } from "../../shared/db/index.js";
 import { sendRuntimeMessage } from "../../shared/messages.js";
 import type {
@@ -219,24 +219,51 @@ function AnalyzeTab(): preact.JSX.Element {
 
 function CaptionLines({ sessionId }: { sessionId: string }): preact.JSX.Element {
   const entries = useLiveQuery(() => watchSessionEntries(sessionId), [sessionId]);
+  const [copyState, setCopyState] = useState("");
   if (!entries) {
     return <p class="muted">Loading…</p>;
   }
   if (!entries.length) {
     return <EmptyState title="No captions yet" />;
   }
+
+  async function copyTranscript(): Promise<void> {
+    const text = entries!
+      .map((e) => `${e.speakerResolved ?? e.speakerOriginal ?? "—"}: ${e.text}`)
+      .join("\n");
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopyState("Copied");
+    } catch {
+      setCopyState("Copy failed");
+    }
+    setTimeout(() => setCopyState(""), 1500);
+  }
+
   return (
-    <ul
-      class="stack"
-      style={{ listStyle: "none", padding: 0, margin: 0, gap: "var(--space-2)" }}
-      data-testid="captions-preview"
-    >
-      {entries.map((e) => (
-        <li key={e.id} style={{ fontSize: "var(--text-sm)" }}>
-          <strong>{e.speakerResolved ?? e.speakerOriginal ?? "—"}:</strong> {e.text}
-        </li>
-      ))}
-    </ul>
+    <>
+      <div class="row">
+        <Button onClick={copyTranscript} data-testid="copy-transcript">
+          Copy transcript
+        </Button>
+        {copyState ? (
+          <span class="muted" data-testid="copy-status">
+            {copyState}
+          </span>
+        ) : null}
+      </div>
+      <ul
+        class="stack"
+        style={{ listStyle: "none", padding: 0, margin: 0, gap: "var(--space-2)" }}
+        data-testid="captions-preview"
+      >
+        {entries.map((e) => (
+          <li key={e.id} style={{ fontSize: "var(--text-sm)" }}>
+            <strong>{e.speakerResolved ?? e.speakerOriginal ?? "—"}:</strong> {e.text}
+          </li>
+        ))}
+      </ul>
+    </>
   );
 }
 
@@ -307,8 +334,11 @@ function PermissionHint({ diag }: { diag: DiagnosticsView }): preact.JSX.Element
     >
       <strong>Content script not running.</strong>
       <p class="muted" style={{ margin: "var(--space-1) 0 0" }}>
-        Safari → Settings → Extensions → <em>Teams Captions Extension</em> → set BOTH{" "}
-        <strong>teams.microsoft.com</strong> and <strong>teams.cloud.microsoft</strong> to{" "}
+        <strong>Chrome:</strong> reload the Teams tab (content scripts inject on page load), or use{" "}
+        <em>Force inject content script</em> below.
+        <br />
+        <strong>Safari:</strong> Settings → Extensions → <em>Teams Captions Extension</em> → set
+        BOTH <strong>teams.microsoft.com</strong> and <strong>teams.cloud.microsoft</strong> to{" "}
         <strong>Allow</strong> (or pick "On Every Website"). Then reload the Teams tab. If the
         domain is missing from the list, the extension manifest is out of date — rebuild and reload
         the temporary extension.

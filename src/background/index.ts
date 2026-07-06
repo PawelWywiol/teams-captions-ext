@@ -82,14 +82,45 @@ async function injectViaText(tabId: number): Promise<{ ok: boolean; error?: stri
   }
 }
 
+async function isContentScriptLoaded(tabId: number): Promise<boolean> {
+  if (!browser.scripting) return false;
+  try {
+    const result = await browser.scripting.executeScript({
+      target: { tabId },
+      func: (): boolean =>
+        Boolean((window as unknown as Record<string, unknown>)["__teamsCaptionsExtLoaded"]),
+    });
+    return result[0]?.result === true;
+  } catch {
+    return false;
+  }
+}
+
+async function injectIntoTab(tabId: number): Promise<{ ok: boolean; error?: string }> {
+  if (!browser.scripting) return { ok: false, error: "scripting API unavailable" };
+  if (await isContentScriptLoaded(tabId)) return { ok: true };
+
+  try {
+    await browser.scripting.executeScript({ target: { tabId }, files: ["content/index.js"] });
+  } catch (err) {
+    console.warn("[teams-captions] files injection failed", tabId, err);
+  }
+  if (await isContentScriptLoaded(tabId)) return { ok: true };
+
+  // Safari MV3 silently ignores executeScript({files}); run the script text in
+  // the isolated world instead. Chromium blocks this eval path via CSP, but
+  // there the files path above already works.
+  return injectViaText(tabId);
+}
+
 async function injectContentScript(tabId: number, url: string | undefined): Promise<void> {
   if (!isTeamsUrl(url)) return;
-  const text = await injectViaText(tabId);
-  if (text.ok) {
+  const result = await injectIntoTab(tabId);
+  if (result.ok) {
     injectedTabs.add(tabId);
-    console.log("[teams-captions] injected (text) into tab", tabId, url);
+    console.log("[teams-captions] injected into tab", tabId, url);
   } else {
-    console.warn("[teams-captions] text injection failed", tabId, text.error);
+    console.warn("[teams-captions] injection failed", tabId, result.error);
   }
 }
 
@@ -129,12 +160,12 @@ async function forceInjectActiveTab(): Promise<ForceInjectResult> {
     if (!tab || tab.id === undefined) {
       return { ok: false, message: "Tab has no id" };
     }
-    const textInject = await injectViaText(tab.id);
-    console.log("[teams-captions] force-inject (text) tab", tab.id, tab.url, textInject);
-    if (!textInject.ok) {
+    const inject = await injectIntoTab(tab.id);
+    console.log("[teams-captions] force-inject tab", tab.id, tab.url, inject);
+    if (!inject.ok) {
       return {
         ok: false,
-        message: `text-inject failed: ${textInject.error}`,
+        message: `inject failed: ${inject.error}`,
         tabId: tab.id,
         tabUrl: tab.url,
       };

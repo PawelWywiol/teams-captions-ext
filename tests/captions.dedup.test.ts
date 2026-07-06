@@ -34,4 +34,27 @@ describe("isDuplicate", () => {
 
     expect(isDuplicate(existing, next)).toBe(false);
   });
+
+  it("treats same id with different text as an update, not a duplicate", () => {
+    const id = crypto.randomUUID();
+    const existing = [makeEntry({ id, text: "raz dwa" })];
+    const next = makeEntry({ id, text: "raz dwa trzy" });
+
+    expect(isDuplicate(existing, next)).toBe(false);
+  });
+
+  it("returns true for same id and same text", () => {
+    const id = crypto.randomUUID();
+    const existing = [makeEntry({ id, text: "raz dwa" })];
+    const next = makeEntry({ id, text: "raz dwa" });
+
+    expect(isDuplicate(existing, next)).toBe(true);
+  });
+
+  it("returns false for same text from a different speaker", () => {
+    const existing = [makeEntry({ text: "Hello world", speakerOriginal: "Jan" })];
+    const next = makeEntry({ text: "Hello world", speakerOriginal: "Anna" });
+
+    expect(isDuplicate(existing, next)).toBe(false);
+  });
 });

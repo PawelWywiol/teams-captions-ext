@@ -585,6 +585,7 @@ describe("teams DOM caption extraction", () => {
         { speakerOriginal: "Solo Speaker", text: "Only caption line" },
         { speakerOriginal: "Second Speaker", text: "Second caption line" },
       ]);
+      expect(observed[0].id).not.toBe(observed[1].id);
     } finally {
       source.stop();
       globalThis.document = previousDocument;
@@ -616,6 +617,30 @@ describe("teams DOM caption extraction", () => {
       textNode.data = "Only caption line, extended live";
       await Promise.resolve();
       expect(observed.map((entry) => entry.text)).toContain("Only caption line, extended live");
+    });
+  });
+
+  it("keeps a stable id and ts across progressive in-place updates of one utterance", async () => {
+    const document = buildSingleCaptionDocument();
+    await withDomGlobals(document, async (source, observed) => {
+      expect(source.start()).toBe(true);
+      const textNode = document.querySelector('[data-tid="closed-caption-text"]')
+        ?.firstChild as Text;
+
+      for (const text of ["raz", "raz dwa", "raz dwa trzy", "raz two trzy"]) {
+        textNode.data = text;
+        await Promise.resolve();
+      }
+
+      expect(observed.map((entry) => entry.text)).toEqual([
+        "Only caption line",
+        "raz",
+        "raz dwa",
+        "raz dwa trzy",
+        "raz two trzy",
+      ]);
+      expect(new Set(observed.map((entry) => entry.id)).size).toBe(1);
+      expect(new Set(observed.map((entry) => entry.ts)).size).toBe(1);
     });
   });
 

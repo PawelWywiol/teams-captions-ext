@@ -56,7 +56,9 @@ function findContainerByMarker(marker: Element | null): HTMLElement | null {
   return null;
 }
 
-function toCaptionEntry(element: HTMLElement): CaptionEntry | null {
+type CaptionIdentity = { id: string; ts: string; speaker?: string };
+
+function toCaptionEntry(element: HTMLElement, identity?: CaptionIdentity): CaptionEntry | null {
   const speakerOriginal =
     element.querySelector(CAPTION_AUTHOR_SELECTOR)?.textContent?.trim() || undefined;
   const text = element.querySelector(CAPTION_TEXT_SELECTOR)?.textContent?.trim();
@@ -64,8 +66,8 @@ function toCaptionEntry(element: HTMLElement): CaptionEntry | null {
   if (!text) return null;
 
   return {
-    id: crypto.randomUUID(),
-    ts: new Date().toISOString(),
+    id: identity?.id ?? crypto.randomUUID(),
+    ts: identity?.ts ?? new Date().toISOString(),
     speakerOriginal,
     text,
     source: "dom",
@@ -162,6 +164,7 @@ export class DomCaptionSource {
   private observer: MutationObserver | null = null;
   private recentFingerprints: string[] = [];
   private rootRef: HTMLElement | null = null;
+  private identities = new WeakMap<HTMLElement, CaptionIdentity>();
 
   constructor(private readonly onEntry: OnEntry) {}
 
@@ -195,11 +198,31 @@ export class DomCaptionSource {
   private emitIfFresh(entry: CaptionEntry | null): CaptionEntry | null {
     if (!entry) return null;
 
-    const fingerprint = `${entry.speakerOriginal ?? ""}::${entry.text}`;
+    const fingerprint = `${entry.id}::${entry.speakerOriginal ?? ""}::${entry.text}`;
     if (this.hasRecentFingerprint(fingerprint)) return null;
 
     this.rememberFingerprint(fingerprint);
     return entry;
+  }
+
+  // Teams mutates the last caption element's text in place while a person is
+  // speaking; a stable identity per element lets the background upsert one row
+  // per utterance instead of appending every intermediate version. A speaker
+  // change on the same element means the virtual list recycled it for a new
+  // utterance, so the identity is re-minted.
+  private identityFor(container: HTMLElement): CaptionIdentity {
+    const speaker =
+      container.querySelector(CAPTION_AUTHOR_SELECTOR)?.textContent?.trim() || undefined;
+    const existing = this.identities.get(container);
+    if (existing && existing.speaker === speaker) return existing;
+
+    const identity: CaptionIdentity = {
+      id: crypto.randomUUID(),
+      ts: new Date().toISOString(),
+      speaker,
+    };
+    this.identities.set(container, identity);
+    return identity;
   }
 
   private parseNode(node: HTMLElement): CaptionEntry[] {
@@ -212,7 +235,7 @@ export class DomCaptionSource {
       const container = findContainerByTextNode(textNode);
       if (!container) continue;
 
-      const entry = this.emitIfFresh(toCaptionEntry(container));
+      const entry = this.emitIfFresh(toCaptionEntry(container, this.identityFor(container)));
       if (entry) entries.push(entry);
     }
 

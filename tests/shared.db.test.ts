@@ -1,7 +1,7 @@
 import "fake-indexeddb/auto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
-  appendEntry,
+  upsertEntry,
   countEntries,
   createSession,
   deleteSession,
@@ -65,9 +65,9 @@ describe("captions db", () => {
     const a = await createSession("https://teams.microsoft.com/a");
     const b = await createSession("https://teams.microsoft.com/b");
 
-    await appendEntry(a.id, makeEntry({ text: "in A", ts: "2026-05-21T10:00:00.000Z" }));
-    await appendEntry(b.id, makeEntry({ text: "in B", ts: "2026-05-21T10:00:01.000Z" }));
-    await appendEntry(a.id, makeEntry({ text: "also A", ts: "2026-05-21T10:00:02.000Z" }));
+    await upsertEntry(a.id, makeEntry({ text: "in A", ts: "2026-05-21T10:00:00.000Z" }));
+    await upsertEntry(b.id, makeEntry({ text: "in B", ts: "2026-05-21T10:00:01.000Z" }));
+    await upsertEntry(a.id, makeEntry({ text: "also A", ts: "2026-05-21T10:00:02.000Z" }));
 
     const aEntries = await getSessionEntries(a.id);
     expect(aEntries.map((e) => e.text)).toEqual(["in A", "also A"]);
@@ -75,10 +75,22 @@ describe("captions db", () => {
     expect(await countEntries(b.id)).toBe(1);
   });
 
+  it("updates an existing entry in place on repeated upsert", async () => {
+    const s = await createSession("https://teams.microsoft.com/a");
+    const entry = makeEntry({ text: "raz", ts: "2026-05-21T10:00:00.000Z" });
+
+    await upsertEntry(s.id, entry);
+    await upsertEntry(s.id, { ...entry, text: "raz dwa trzy" });
+
+    const entries = await getSessionEntries(s.id);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ id: entry.id, ts: entry.ts, text: "raz dwa trzy" });
+  });
+
   it("returns recent entries in chronological order", async () => {
     const s = await createSession("https://teams.microsoft.com/x");
     for (let i = 0; i < 8; i += 1) {
-      await appendEntry(s.id, makeEntry({ text: `t${i}`, ts: `2026-05-21T10:00:0${i}.000Z` }));
+      await upsertEntry(s.id, makeEntry({ text: `t${i}`, ts: `2026-05-21T10:00:0${i}.000Z` }));
     }
     const recent = await getRecentEntries(s.id, 3);
     expect(recent.map((e) => e.text)).toEqual(["t5", "t6", "t7"]);
@@ -86,7 +98,7 @@ describe("captions db", () => {
 
   it("loads session with entries projected as CaptionSession", async () => {
     const s = await createSession("https://teams.microsoft.com/y");
-    await appendEntry(s.id, makeEntry({ text: "one", ts: "2026-05-21T10:00:00.000Z" }));
+    await upsertEntry(s.id, makeEntry({ text: "one", ts: "2026-05-21T10:00:00.000Z" }));
     const loaded = await loadSession(s.id);
     expect(loaded).not.toBeNull();
     expect(loaded?.entries).toHaveLength(1);
@@ -99,14 +111,14 @@ describe("captions db", () => {
     const s = await createSession("https://teams.microsoft.com/z");
     const before = s.updatedAt;
     await new Promise((r) => setTimeout(r, 5));
-    await appendEntry(s.id, makeEntry());
+    await upsertEntry(s.id, makeEntry());
     const after = (await loadSession(s.id))?.updatedAt;
     expect(after).not.toBe(before);
   });
 
   it("deletes session and cascades entries", async () => {
     const s = await createSession("https://teams.microsoft.com/d");
-    await appendEntry(s.id, makeEntry());
+    await upsertEntry(s.id, makeEntry());
     await deleteSession(s.id);
     expect(await loadSession(s.id)).toBeNull();
     expect(await countEntries(s.id)).toBe(0);

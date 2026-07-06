@@ -50,6 +50,10 @@ export async function createSession(pageUrl: string): Promise<StoredSession> {
   return session;
 }
 
+export async function putSession(session: StoredSession): Promise<void> {
+  await getDb().sessions.put(session);
+}
+
 export async function findActiveSessionForUrl(pageUrl: string): Promise<StoredSession | null> {
   const db = getDb();
   const candidate = await db.sessions
@@ -59,11 +63,11 @@ export async function findActiveSessionForUrl(pageUrl: string): Promise<StoredSe
   return candidate ?? null;
 }
 
-export async function appendEntry(sessionId: string, entry: CaptionEntry): Promise<void> {
+export async function upsertEntry(sessionId: string, entry: CaptionEntry): Promise<void> {
   const db = getDb();
   const stored: StoredCaptionEntry = { ...entry, sessionId };
   await db.transaction("rw", db.entries, db.sessions, async () => {
-    await db.entries.add(stored);
+    await db.entries.put(stored);
     await db.sessions.update(sessionId, { updatedAt: nowIso() });
   });
 }

@@ -81,28 +81,57 @@ function SessionList({ sessions }: { sessions: StoredSession[] }): preact.JSX.El
 
 function Transcript({ sessionId }: { sessionId: string }): preact.JSX.Element {
   const entries = useLiveQuery(() => watchSessionEntries(sessionId), [sessionId]);
+  const [copyState, setCopyState] = useState("");
   if (!entries) {
     return <p class="muted">Loading…</p>;
   }
   if (!entries.length) {
     return <EmptyState title="No captions yet" />;
   }
+
+  async function copyTranscript(): Promise<void> {
+    const text = entries!
+      .map((e) => `${e.speakerResolved ?? e.speakerOriginal ?? "—"}: ${e.text}`)
+      .join("\n");
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopyState("Copied");
+    } catch {
+      setCopyState("Copy failed");
+    }
+    setTimeout(() => setCopyState(""), 1500);
+  }
+
   return (
-    <ol
-      class="stack"
-      style={{ listStyle: "none", padding: 0, margin: 0, overflow: "auto" }}
-      data-testid="transcript"
-    >
-      {entries.map((e) => (
-        <li key={e.id} class="row" style={{ alignItems: "baseline" }}>
-          <span class="muted" style={{ fontSize: "var(--text-xs)", minWidth: 64 }}>
-            {e.ts.slice(11, 19)}
+    <div class="stack">
+      <div class="row">
+        <Button onClick={copyTranscript} data-testid="copy-transcript">
+          Copy transcript
+        </Button>
+        {copyState ? (
+          <span class="muted" data-testid="transcript-copy-status">
+            {copyState}
           </span>
-          <strong style={{ minWidth: 120 }}>{e.speakerResolved ?? e.speakerOriginal ?? "—"}</strong>
-          <span>{e.text}</span>
-        </li>
-      ))}
-    </ol>
+        ) : null}
+      </div>
+      <ol
+        class="stack"
+        style={{ listStyle: "none", padding: 0, margin: 0, overflow: "auto" }}
+        data-testid="transcript"
+      >
+        {entries.map((e) => (
+          <li key={e.id} class="row" style={{ alignItems: "baseline" }}>
+            <span class="muted" style={{ fontSize: "var(--text-xs)", minWidth: 64 }}>
+              {e.ts.slice(11, 19)}
+            </span>
+            <strong style={{ minWidth: 120 }}>
+              {e.speakerResolved ?? e.speakerOriginal ?? "—"}
+            </strong>
+            <span>{e.text}</span>
+          </li>
+        ))}
+      </ol>
+    </div>
   );
 }
 
