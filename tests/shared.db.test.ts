@@ -5,15 +5,17 @@ import {
   countEntries,
   createSession,
   deleteSession,
-  endSession,
-  findActiveSessionForUrl,
+  getActiveSessionId,
   getDb,
   getRecentEntries,
+  getSession,
   getSessionEntries,
   listSessions,
   loadSession,
   renameSession,
+  setActiveSessionId,
   setDbForTesting,
+  updateSession,
 } from "../src/shared/db/index.js";
 import { createDatabase } from "../src/shared/db/schema.js";
 import type { CaptionEntry } from "../src/shared/types.js";
@@ -48,17 +50,8 @@ describe("captions db", () => {
     expect(session.pageUrl).toBe("https://teams.microsoft.com/meeting/1");
     expect(session.title).toContain("teams.microsoft.com");
 
-    const found = await findActiveSessionForUrl("https://teams.microsoft.com/meeting/1");
+    const found = await getSession(session.id);
     expect(found?.id).toBe(session.id);
-  });
-
-  it("finds only active (non-ended) session for url", async () => {
-    const first = await createSession("https://teams.microsoft.com/meeting/1");
-    await endSession(first.id);
-    const replacement = await createSession("https://teams.microsoft.com/meeting/1");
-
-    const found = await findActiveSessionForUrl("https://teams.microsoft.com/meeting/1");
-    expect(found?.id).toBe(replacement.id);
   });
 
   it("appends entries scoped to a session", async () => {
@@ -130,6 +123,39 @@ describe("captions db", () => {
     const found = (await listSessions())[0];
     expect(found?.title).toBe("Sprint planning");
     await expect(renameSession(s.id, "   ")).rejects.toThrow(/title/i);
+  });
+
+  it("gets and sets the active session pointer", async () => {
+    expect(await getActiveSessionId()).toBeNull();
+    const s = await createSession("https://teams.microsoft.com/p");
+    await setActiveSessionId(s.id);
+    expect(await getActiveSessionId()).toBe(s.id);
+    await setActiveSessionId(null);
+    expect(await getActiveSessionId()).toBeNull();
+  });
+
+  it("clears the active pointer when the active session is deleted", async () => {
+    const s = await createSession("https://teams.microsoft.com/p");
+    await setActiveSessionId(s.id);
+    await deleteSession(s.id);
+    expect(await getActiveSessionId()).toBeNull();
+  });
+
+  it("keeps the active pointer when a different session is deleted", async () => {
+    const active = await createSession("https://teams.microsoft.com/a");
+    const other = await createSession("https://teams.microsoft.com/b");
+    await setActiveSessionId(active.id);
+    await deleteSession(other.id);
+    expect(await getActiveSessionId()).toBe(active.id);
+  });
+
+  it("updates the per-session prompt and rejects an empty title", async () => {
+    const s = await createSession("https://teams.microsoft.com/u");
+    await updateSession(s.id, { prompt: "Focus on decisions" });
+    expect((await getSession(s.id))?.prompt).toBe("Focus on decisions");
+    await updateSession(s.id, { title: "Retro" });
+    expect((await getSession(s.id))?.title).toBe("Retro");
+    await expect(updateSession(s.id, { title: "  " })).rejects.toThrow(/title/i);
   });
 
   it("lists sessions newest first", async () => {

@@ -19,7 +19,13 @@ declare const browser: {
     getURL(path: string): string;
     getManifest?(): { version: string; [key: string]: unknown };
     onMessage: {
-      addListener(listener: (message: any) => unknown): void;
+      addListener(
+        listener: (
+          message: any,
+          sender: unknown,
+          sendResponse: (response?: unknown) => void,
+        ) => unknown,
+      ): void;
     };
   };
   tabs: {

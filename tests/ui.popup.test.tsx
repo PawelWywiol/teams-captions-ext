@@ -71,6 +71,14 @@ function makeHandler(
     if (m.type === "ANALYZE_CURRENT_SESSION")
       return { ...state, status: "result_ready", resultText: "Summary text" };
     if (m.type === "CLEAR_RESULT") return { ...state, resultText: undefined };
+    if (m.type === "CREATE_SESSION")
+      return {
+        ...state,
+        activeSessionId: "fresh-session-id",
+        entriesCount: 0,
+        resultText: undefined,
+        defaults: { title: "Fresh session title", prompt: "Default prompt" },
+      };
     return undefined;
   };
 }
@@ -196,6 +204,86 @@ describe("popup app", () => {
     expect(container.textContent).toContain("Settings → Extensions");
   });
 
+  it("New session click creates a session, resets state, and shows a notice", async () => {
+    installBrowser(makeHandler());
+    const { App } = await import("../src/ui/popup/App.js");
+    const { container } = render(<App />);
+    await waitFor(() => {
+      expect(container.querySelector('[data-testid="captions-count"]')?.textContent).toBe(
+        "7 captions",
+      );
+    });
+
+    fireEvent.click(
+      container.querySelector('[data-testid="new-session-btn"]') as HTMLButtonElement,
+    );
+
+    await waitFor(() => {
+      expect(container.querySelector('[data-testid="notice"]')?.textContent).toBe(
+        "New session started",
+      );
+    });
+    expect(container.querySelector('[data-testid="captions-count"]')?.textContent).toBe(
+      "0 captions",
+    );
+    const title = container.querySelector('[data-testid="title-input"]') as HTMLInputElement;
+    expect(title.value).toBe("Fresh session title");
+  });
+
+  it("New session is not swallowed by an in-flight state refresh", async () => {
+    const captured: { value: AnyMessage | null } = { value: null };
+    installBrowser((m) => {
+      // Popup-state refresh hangs: the old shared `busy` guard would drop the click.
+      if (m.type === "GET_POPUP_STATE") return new Promise(() => {});
+      if (m.type === "GET_DIAGNOSTICS") return defaultDiag;
+      if (m.type === "CREATE_SESSION") {
+        captured.value = m;
+        return { ...defaultState, activeSessionId: "fresh-session-id", entriesCount: 0 };
+      }
+      return undefined;
+    });
+    const { App } = await import("../src/ui/popup/App.js");
+    const { container } = render(<App />);
+    await waitFor(() =>
+      expect(container.querySelector('[data-testid="new-session-btn"]')).toBeTruthy(),
+    );
+
+    fireEvent.click(
+      container.querySelector('[data-testid="new-session-btn"]') as HTMLButtonElement,
+    );
+
+    await waitFor(() => expect(captured.value?.type).toBe("CREATE_SESSION"));
+    await waitFor(() => {
+      expect(container.querySelector('[data-testid="notice"]')?.textContent).toBe(
+        "New session started",
+      );
+    });
+  });
+
+  it("surfaces background errors from New session instead of failing silently", async () => {
+    installBrowser((m) => {
+      if (m.type === "GET_POPUP_STATE") return defaultState;
+      if (m.type === "GET_DIAGNOSTICS") return defaultDiag;
+      if (m.type === "CREATE_SESSION") return { __error: "IndexedDB write failed" };
+      return undefined;
+    });
+    const { App } = await import("../src/ui/popup/App.js");
+    const { container } = render(<App />);
+    await waitFor(() =>
+      expect(container.querySelector('[data-testid="new-session-btn"]')).toBeTruthy(),
+    );
+
+    fireEvent.click(
+      container.querySelector('[data-testid="new-session-btn"]') as HTMLButtonElement,
+    );
+
+    await waitFor(() => {
+      expect(container.querySelector('[data-testid="notice"]')?.textContent).toBe(
+        "IndexedDB write failed",
+      );
+    });
+  });
+
   it("Captions tab lists captured captions of the active session", async () => {
     installBrowser(makeHandler());
     const db = await import("../src/shared/db/index.js");
@@ -203,6 +291,7 @@ describe("popup app", () => {
     db.setDbForTesting(createDatabase(`popup-${crypto.randomUUID()}`));
     try {
       const session = await db.createSession("https://teams.microsoft.com/meet/x");
+      await db.setActiveSessionId(session.id);
       await db.upsertEntry(
         session.id,
         makeEntry({ speakerOriginal: "Alice", text: "alpha line", ts: "2026-05-22T10:00:00.000Z" }),

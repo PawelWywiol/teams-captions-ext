@@ -2,7 +2,13 @@
 import "fake-indexeddb/auto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/preact";
-import { upsertEntry, createSession, getDb, setDbForTesting } from "../src/shared/db/index.js";
+import {
+  upsertEntry,
+  createSession,
+  getDb,
+  setActiveSessionId,
+  setDbForTesting,
+} from "../src/shared/db/index.js";
 import { createDatabase } from "../src/shared/db/schema.js";
 import type { CaptionEntry } from "../src/shared/types.js";
 
@@ -51,6 +57,25 @@ describe("sessions app", () => {
       expect(transcript?.textContent).toContain("beta");
     });
     expect(container.querySelector('[data-testid="copy-transcript"]')).toBeTruthy();
+  });
+
+  it("marks the active session with a badge and disables its Set active button", async () => {
+    const active = await createSession("https://teams.microsoft.com/meet/active");
+    await createSession("https://teams.microsoft.com/meet/other");
+    await setActiveSessionId(active.id);
+
+    const { App } = await import("../src/ui/sessions/App.js");
+    const { container } = render(<App />);
+
+    await waitFor(() => {
+      const list = container.querySelector('[data-testid="session-list"]');
+      expect(list?.textContent).toContain("Active");
+    });
+
+    // Newest session (the non-active "other") is selected by default → Set active enabled.
+    const setActive = container.querySelector<HTMLButtonElement>('[data-testid="set-active-btn"]');
+    expect(setActive?.disabled).toBe(false);
+    expect(setActive?.textContent).toContain("Set active");
   });
 
   it("filters sessions by search query", async () => {

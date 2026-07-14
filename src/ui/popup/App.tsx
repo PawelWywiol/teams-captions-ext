@@ -1,6 +1,6 @@
 import { signal } from "@preact/signals";
 import { useEffect, useState } from "preact/hooks";
-import { watchSessionEntries, watchSessions } from "../../shared/db/index.js";
+import { updateSession, watchActiveSessionId, watchSessionEntries } from "../../shared/db/index.js";
 import { sendRuntimeMessage } from "../../shared/messages.js";
 import type {
   AnalyzeOptionsPayload,
@@ -30,6 +30,8 @@ const includePrevious = signal(false);
 const titleDirty = signal(false);
 const promptDirty = signal(false);
 const busy = signal(false);
+const creating = signal(false);
+const notice = signal<{ kind: "ok" | "error"; text: string } | null>(null);
 const fetchingDiag = signal(false);
 const injectResult = signal<ForceInjectResult | null>(null);
 const injecting = signal(false);
@@ -50,10 +52,17 @@ async function send<T = unknown>(message: RuntimeMessage): Promise<T> {
 }
 
 function applyPopupState(next: PopupState): void {
+  // Switching active session (e.g. after "New session") resets the editable
+  // title/prompt fields to the new session's stored values.
+  const switched = next.activeSessionId !== popupState.value.activeSessionId;
+  if (switched) {
+    titleDirty.value = false;
+    promptDirty.value = false;
+  }
   popupState.value = next;
   if (next.defaults) {
-    if (!titleDirty.value) titleInput.value = next.defaults.title;
-    if (!promptDirty.value) promptInput.value = next.defaults.prompt;
+    if (switched || !titleDirty.value) titleInput.value = next.defaults.title;
+    if (switched || !promptDirty.value) promptInput.value = next.defaults.prompt;
   }
   if (next.hasPreviousSummary !== undefined && !includePrevious.peek() && next.hasPreviousSummary) {
     includePrevious.value = true;
@@ -63,11 +72,55 @@ function applyPopupState(next: PopupState): void {
   }
 }
 
+let noticeTimer: ReturnType<typeof setTimeout> | undefined;
+function showNotice(kind: "ok" | "error", text: string, ttlMs = 2000): void {
+  notice.value = { kind, text };
+  clearTimeout(noticeTimer);
+  noticeTimer = setTimeout(() => {
+    notice.value = null;
+  }, ttlMs);
+}
+
+function errorText(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
+}
+
+// Own in-flight flag: the shared `busy` toggles on every periodic refresh and
+// would silently swallow clicks that land mid-refresh.
+async function createSession(): Promise<void> {
+  if (creating.value) return;
+  creating.value = true;
+  try {
+    applyPopupState(await send<PopupState>({ type: "CREATE_SESSION" }));
+    showNotice("ok", "New session started");
+  } catch (error) {
+    showNotice("error", errorText(error, "New session failed"), 6000);
+  } finally {
+    creating.value = false;
+  }
+}
+
+async function persistTitle(): Promise<void> {
+  const id = popupState.value.activeSessionId;
+  if (!id || !titleDirty.value || !titleInput.value.trim()) return;
+  await updateSession(id, { title: titleInput.value });
+}
+
+async function persistPrompt(): Promise<void> {
+  const id = popupState.value.activeSessionId;
+  if (!id || !promptDirty.value) return;
+  await updateSession(id, { prompt: promptInput.value });
+}
+
 async function refreshState(): Promise<void> {
   if (busy.value) return;
   busy.value = true;
   try {
     applyPopupState(await send<PopupState>({ type: "GET_POPUP_STATE" }));
+  } catch (error) {
+    // Periodic refresh: log instead of toasting every 2.5s while the
+    // background is reloading.
+    console.warn("[teams-captions] refresh failed", error);
   } finally {
     busy.value = false;
   }
@@ -93,6 +146,8 @@ async function runAnalyze(): Promise<void> {
       includePrevious: includePrevious.value,
     };
     applyPopupState(await send<PopupState>({ type: "ANALYZE_CURRENT_SESSION", payload }));
+  } catch (error) {
+    showNotice("error", errorText(error, "Analyze failed"), 6000);
   } finally {
     busy.value = false;
   }
@@ -103,6 +158,8 @@ async function clearResult(): Promise<void> {
   busy.value = true;
   try {
     applyPopupState(await send<PopupState>({ type: "CLEAR_RESULT" }));
+  } catch (error) {
+    showNotice("error", errorText(error, "Clear failed"), 6000);
   } finally {
     busy.value = false;
   }
@@ -128,6 +185,7 @@ function AnalyzeTab(): preact.JSX.Element {
             titleInput.value = (e.target as HTMLInputElement).value;
             titleDirty.value = true;
           }}
+          onBlur={() => void persistTitle()}
           placeholder="Meeting title"
         />
       </Field>
@@ -146,6 +204,7 @@ function AnalyzeTab(): preact.JSX.Element {
             promptInput.value = (e.target as HTMLTextAreaElement).value;
             promptDirty.value = true;
           }}
+          onBlur={() => void persistPrompt()}
           placeholder="Focus on action items, decisions, blockers…"
         />
       </Field>
@@ -179,9 +238,26 @@ function AnalyzeTab(): preact.JSX.Element {
         >
           {status === "analyzing" ? "Analyzing…" : "Analyze"}
         </Button>
+        <Button
+          onClick={() => void createSession()}
+          disabled={creating.value}
+          data-testid="new-session-btn"
+        >
+          {creating.value ? "Creating…" : "New session"}
+        </Button>
         <Button onClick={openSessions}>Sessions</Button>
         <Button onClick={() => void browser.runtime.openOptionsPage()}>Settings</Button>
       </div>
+
+      {notice.value ? (
+        <div
+          class={`status-badge ${notice.value.kind === "ok" ? "is-capturing" : "is-error"}`}
+          role="status"
+          data-testid="notice"
+        >
+          {notice.value.text}
+        </div>
+      ) : null}
 
       {resultText ? (
         <section class="stack">
@@ -268,19 +344,18 @@ function CaptionLines({ sessionId }: { sessionId: string }): preact.JSX.Element 
 }
 
 function CaptionsTab(): preact.JSX.Element {
-  const sessions = useLiveQuery(() => watchSessions(), []);
-  if (!sessions) {
+  const activeId = useLiveQuery(() => watchActiveSessionId(), []);
+  if (activeId === undefined) {
     return <p class="muted">Loading…</p>;
   }
-  const active = sessions[0];
-  if (!active) {
+  if (!activeId) {
     return (
       <EmptyState title="No captions yet" description="Open a Teams meeting and start captions." />
     );
   }
   return (
     <div class="stack">
-      <CaptionLines sessionId={active.id} />
+      <CaptionLines sessionId={activeId} />
     </div>
   );
 }

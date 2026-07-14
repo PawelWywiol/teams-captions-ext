@@ -81,6 +81,7 @@ export type PopupState = {
   lastError?: string;
   resultText?: string;
   hasPreviousSummary?: boolean;
+  activeSessionId?: string;
   defaults?: { title: string; prompt: string };
 };
 
@@ -115,6 +116,10 @@ export type AnalyzeSessionPayload = AnalyzeOptionsPayload & {
   sessionId: string;
 };
 
+// Rejected background handlers respond with this instead of leaving the
+// sender's promise resolved to undefined.
+export type ErrorResponse = { __error: string };
+
 export type RuntimeMessage =
   | { type: "GET_POPUP_STATE" }
   | { type: "GET_SETTINGS" }
@@ -124,6 +129,8 @@ export type RuntimeMessage =
   | { type: "DIAGNOSTICS_REPORT"; payload: DiagnosticsReportPayload }
   | { type: "ANALYZE_CURRENT_SESSION"; payload?: AnalyzeOptionsPayload }
   | { type: "ANALYZE_SESSION"; payload: AnalyzeSessionPayload }
+  | { type: "CREATE_SESSION"; payload?: { pageUrl?: string } }
+  | { type: "SET_ACTIVE_SESSION"; payload: { sessionId: string } }
   | { type: "CLEAR_RESULT" }
   | { type: "STOP_CAPTURE" }
   | { type: "FORCE_INJECT" };

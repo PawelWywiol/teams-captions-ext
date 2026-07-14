@@ -3,6 +3,8 @@ import { useState } from "preact/hooks";
 import {
   deleteSession,
   renameSession,
+  updateSession,
+  watchActiveSessionId,
   watchLatestSummary,
   watchSessionEntries,
   watchSessions,
@@ -10,7 +12,7 @@ import {
 import type { StoredSession, StoredSummary } from "../../shared/db/schema.js";
 import { sendRuntimeMessage } from "../../shared/messages.js";
 import type { PopupState } from "../../shared/types.js";
-import { Button, EmptyState, Field } from "../shared/primitives.js";
+import { Button, EmptyState, Field, StatusBadge } from "../shared/primitives.js";
 import { useLiveQuery } from "../shared/useLiveQuery.js";
 
 const selectedId = signal<string | null>(null);
@@ -32,7 +34,30 @@ function formatDate(iso: string): string {
   return iso.slice(0, 16).replace("T", " ");
 }
 
-function SessionList({ sessions }: { sessions: StoredSession[] }): preact.JSX.Element {
+async function onNewSession(): Promise<void> {
+  try {
+    const next = await sendRuntimeMessage<PopupState>({ type: "CREATE_SESSION" });
+    if (next.activeSessionId) selectedId.value = next.activeSessionId;
+  } catch (error) {
+    console.error("[teams-captions] new session failed", error);
+  }
+}
+
+async function onSetActive(sessionId: string): Promise<void> {
+  try {
+    await sendRuntimeMessage<PopupState>({ type: "SET_ACTIVE_SESSION", payload: { sessionId } });
+  } catch (error) {
+    console.error("[teams-captions] set active failed", error);
+  }
+}
+
+function SessionList({
+  sessions,
+  activeId,
+}: {
+  sessions: StoredSession[];
+  activeId: string | null;
+}): preact.JSX.Element {
   const q = query.value.trim().toLowerCase();
   const filtered = q
     ? sessions.filter(
@@ -51,7 +76,8 @@ function SessionList({ sessions }: { sessions: StoredSession[] }): preact.JSX.El
       data-testid="session-list"
     >
       {filtered.map((s) => {
-        const active = s.id === selectedId.value;
+        const selected = s.id === selectedId.value;
+        const isActive = s.id === activeId;
         return (
           <li key={s.id}>
             <button
@@ -63,13 +89,16 @@ function SessionList({ sessions }: { sessions: StoredSession[] }): preact.JSX.El
                 width: "100%",
                 textAlign: "left",
                 padding: "var(--space-3)",
-                background: active ? "var(--color-bg-elev)" : "transparent",
-                borderColor: active ? "var(--color-accent)" : "var(--color-border)",
+                background: selected ? "var(--color-bg-elev)" : "transparent",
+                borderColor: selected ? "var(--color-accent)" : "var(--color-border)",
               }}
             >
-              <div style={{ fontWeight: 600 }}>{s.title}</div>
+              <div class="row" style={{ justifyContent: "space-between", gap: "var(--space-2)" }}>
+                <span style={{ fontWeight: 600 }}>{s.title}</span>
+                {isActive ? <StatusBadge kind="capturing">Active</StatusBadge> : null}
+              </div>
               <div class="muted" style={{ fontSize: "var(--text-xs)" }}>
-                {formatDate(s.startedAt)} · {s.endedAt ? "ended" : "active"}
+                {formatDate(s.startedAt)}
               </div>
             </button>
           </li>
@@ -135,8 +164,9 @@ function Transcript({ sessionId }: { sessionId: string }): preact.JSX.Element {
   );
 }
 
-function SummaryPanel({ sessionId }: { sessionId: string }): preact.JSX.Element {
-  const [userPrompt, setUserPrompt] = useState("");
+function SummaryPanel({ session }: { session: StoredSession }): preact.JSX.Element {
+  const sessionId = session.id;
+  const [userPrompt, setUserPrompt] = useState(session.prompt ?? "");
   const [busy, setBusy] = useState(false);
   const [statusMsg, setStatusMsg] = useState("");
   const [copyState, setCopyState] = useState<"" | "Copied" | "Copy failed">("");
@@ -150,6 +180,7 @@ function SummaryPanel({ sessionId }: { sessionId: string }): preact.JSX.Element 
     setBusy(true);
     setStatusMsg("Analysing…");
     try {
+      await updateSession(sessionId, { prompt: userPrompt });
       const result = await sendRuntimeMessage<PopupState>({
         type: "ANALYZE_SESSION",
         payload: { sessionId, prompt: userPrompt.trim() || undefined },
@@ -180,9 +211,9 @@ function SummaryPanel({ sessionId }: { sessionId: string }): preact.JSX.Element 
   return (
     <div class="stack">
       <Field
-        label="Custom Prompt"
+        label="Session Prompt"
         htmlFor="summary-prompt"
-        hint="Appended to the default analysis prompt. Leave empty to use the default."
+        hint="Saved with this session and appended to the default analysis prompt."
       >
         <textarea
           id="summary-prompt"
@@ -190,6 +221,7 @@ function SummaryPanel({ sessionId }: { sessionId: string }): preact.JSX.Element 
           placeholder="e.g. Focus on action items and owners"
           value={userPrompt}
           onInput={(e) => setUserPrompt((e.target as HTMLTextAreaElement).value)}
+          onBlur={() => void updateSession(sessionId, { prompt: userPrompt })}
         />
       </Field>
       <div class="row">
@@ -261,7 +293,15 @@ function Tabs({
   );
 }
 
-function SessionDetail({ session }: { session: StoredSession }): preact.JSX.Element {
+function SessionDetail({
+  session,
+  activeId,
+}: {
+  session: StoredSession;
+  activeId: string | null;
+}): preact.JSX.Element {
+  const isActive = session.id === activeId;
+
   async function onRename(): Promise<void> {
     const next = prompt("Rename session", session.title);
     if (next == null) return;
@@ -290,6 +330,14 @@ function SessionDetail({ session }: { session: StoredSession }): preact.JSX.Elem
           </div>
         </div>
         <div class="row">
+          <Button
+            variant="primary"
+            onClick={() => void onSetActive(session.id)}
+            disabled={isActive}
+            data-testid="set-active-btn"
+          >
+            {isActive ? "Active" : "Set active"}
+          </Button>
           <Button onClick={onRename}>Rename</Button>
           <Button variant="danger" onClick={onDelete}>
             Delete
@@ -307,7 +355,7 @@ function SessionDetail({ session }: { session: StoredSession }): preact.JSX.Elem
       {activeTab.value === "transcript" ? (
         <Transcript sessionId={session.id} />
       ) : (
-        <SummaryPanel sessionId={session.id} />
+        <SummaryPanel key={session.id} session={session} />
       )}
     </section>
   );
@@ -315,6 +363,7 @@ function SessionDetail({ session }: { session: StoredSession }): preact.JSX.Elem
 
 export function App(): preact.JSX.Element {
   const sessions = useLiveQuery(() => watchSessions(), []);
+  const activeId = useLiveQuery(() => watchActiveSessionId(), []) ?? null;
   if (sessions) pickInitial(sessions);
 
   const selected = sessions?.find((s) => s.id === selectedId.value) ?? null;
@@ -332,7 +381,16 @@ export function App(): preact.JSX.Element {
       }}
     >
       <aside class="stack" style={{ minHeight: 0 }}>
-        <h1 style={{ margin: 0, fontSize: "var(--text-lg)" }}>Sessions</h1>
+        <div class="row" style={{ justifyContent: "space-between" }}>
+          <h1 style={{ margin: 0, fontSize: "var(--text-lg)" }}>Sessions</h1>
+          <Button
+            variant="primary"
+            onClick={() => void onNewSession()}
+            data-testid="new-session-btn"
+          >
+            New session
+          </Button>
+        </div>
         <Field label="Search" htmlFor="sessions-search">
           <input
             id="sessions-search"
@@ -344,11 +402,15 @@ export function App(): preact.JSX.Element {
             }}
           />
         </Field>
-        {sessions ? <SessionList sessions={sessions} /> : <p class="muted">Loading…</p>}
+        {sessions ? (
+          <SessionList sessions={sessions} activeId={activeId} />
+        ) : (
+          <p class="muted">Loading…</p>
+        )}
       </aside>
       <main class="stack" style={{ minHeight: 0 }}>
         {selected ? (
-          <SessionDetail session={selected} />
+          <SessionDetail session={selected} activeId={activeId} />
         ) : (
           <EmptyState
             title="Select a session"

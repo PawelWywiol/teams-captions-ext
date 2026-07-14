@@ -1,6 +1,7 @@
 import { Dexie, liveQuery, type Observable } from "dexie";
 import type { CaptionEntry, CaptionSession } from "../types.js";
 import {
+  ACTIVE_SESSION_KEY,
   createDatabase,
   type CaptionsDb,
   type StoredCaptionEntry,
@@ -36,17 +37,14 @@ function deriveTitle(pageUrl: string, startedAt: string): string {
   }
 }
 
-export async function createSession(pageUrl: string): Promise<StoredSession> {
-  const db = getDb();
+export function buildSession(pageUrl: string, id: string = crypto.randomUUID()): StoredSession {
   const startedAt = nowIso();
-  const session: StoredSession = {
-    id: crypto.randomUUID(),
-    pageUrl,
-    title: deriveTitle(pageUrl, startedAt),
-    startedAt,
-    updatedAt: startedAt,
-  };
-  await db.sessions.add(session);
+  return { id, pageUrl, title: deriveTitle(pageUrl, startedAt), startedAt, updatedAt: startedAt };
+}
+
+export async function createSession(pageUrl: string): Promise<StoredSession> {
+  const session = buildSession(pageUrl);
+  await getDb().sessions.add(session);
   return session;
 }
 
@@ -54,13 +52,40 @@ export async function putSession(session: StoredSession): Promise<void> {
   await getDb().sessions.put(session);
 }
 
-export async function findActiveSessionForUrl(pageUrl: string): Promise<StoredSession | null> {
+export async function getSession(sessionId: string): Promise<StoredSession | null> {
+  return (await getDb().sessions.get(sessionId)) ?? null;
+}
+
+export async function updateSession(
+  sessionId: string,
+  patch: { title?: string; prompt?: string },
+): Promise<void> {
+  const changes: { title?: string; prompt?: string } = {};
+  if (patch.title !== undefined) {
+    const trimmed = patch.title.trim();
+    if (!trimmed) throw new Error("Session title must not be empty");
+    changes.title = trimmed;
+  }
+  if (patch.prompt !== undefined) changes.prompt = patch.prompt;
+  if (Object.keys(changes).length) await getDb().sessions.update(sessionId, changes);
+}
+
+export async function getActiveSessionId(): Promise<string | null> {
+  const row = await getDb().meta.get(ACTIVE_SESSION_KEY);
+  return row?.value ?? null;
+}
+
+export async function setActiveSessionId(sessionId: string | null): Promise<void> {
   const db = getDb();
-  const candidate = await db.sessions
-    .where({ pageUrl })
-    .filter((s: StoredSession) => !s.endedAt)
-    .first();
-  return candidate ?? null;
+  if (sessionId === null) {
+    await db.meta.delete(ACTIVE_SESSION_KEY);
+    return;
+  }
+  await db.meta.put({ key: ACTIVE_SESSION_KEY, value: sessionId });
+}
+
+export function watchActiveSessionId(): Observable<string | null> {
+  return liveQuery(() => getActiveSessionId());
 }
 
 export async function upsertEntry(sessionId: string, entry: CaptionEntry): Promise<void> {
@@ -120,12 +145,18 @@ export async function endSession(sessionId: string): Promise<void> {
 
 export async function deleteSession(sessionId: string): Promise<void> {
   const db = getDb();
-  await db.transaction("rw", db.sessions, db.entries, db.chunks, db.summaries, async () => {
-    await db.entries.where("sessionId").equals(sessionId).delete();
-    await db.chunks.where("sessionId").equals(sessionId).delete();
-    await db.summaries.where("sessionId").equals(sessionId).delete();
-    await db.sessions.delete(sessionId);
-  });
+  await db.transaction(
+    "rw",
+    [db.sessions, db.entries, db.chunks, db.summaries, db.meta],
+    async () => {
+      await db.entries.where("sessionId").equals(sessionId).delete();
+      await db.chunks.where("sessionId").equals(sessionId).delete();
+      await db.summaries.where("sessionId").equals(sessionId).delete();
+      await db.sessions.delete(sessionId);
+      const active = await db.meta.get(ACTIVE_SESSION_KEY);
+      if (active?.value === sessionId) await db.meta.delete(ACTIVE_SESSION_KEY);
+    },
+  );
 }
 
 export async function findChunkByHash(
@@ -165,9 +196,7 @@ export function watchLatestSummary(sessionId: string): Observable<StoredSummary 
 }
 
 export async function renameSession(sessionId: string, title: string): Promise<void> {
-  const trimmed = title.trim();
-  if (!trimmed) throw new Error("Session title must not be empty");
-  await getDb().sessions.update(sessionId, { title: trimmed });
+  await updateSession(sessionId, { title });
 }
 
 export async function countEntries(sessionId: string): Promise<number> {

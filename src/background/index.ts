@@ -1,4 +1,4 @@
-import { countEntries, latestSummary } from "../shared/db/index.js";
+import { countEntries, getSession, latestSummary } from "../shared/db/index.js";
 import { analyzeSession } from "../shared/llm/orchestrator.js";
 import { loadSettings } from "../shared/storage.js";
 import type {
@@ -10,6 +10,7 @@ import type {
   DiagnosticsSessionInfo,
   DiagnosticsSnapshot,
   DiagnosticsView,
+  ErrorResponse,
   ForceInjectProbe,
   ForceInjectResult,
   PageStatusMessagePayload,
@@ -18,9 +19,11 @@ import type {
   RuntimeMessage,
 } from "../shared/types.js";
 import {
+  createAndActivateSession,
   getActiveSession,
   getActiveSessionId,
   ingestCaption,
+  setActiveSession,
   stopActiveSession,
 } from "./session-orchestrator.js";
 
@@ -252,9 +255,13 @@ const state: BackgroundState = {
 let latestDiagnostics: DiagnosticsSnapshot | null = null;
 let latestDiagnosticsAt: string | null = null;
 
-async function loadDefaults(): Promise<{ title: string; prompt: string }> {
+async function loadDefaults(sessionId: string | null): Promise<{ title: string; prompt: string }> {
   const settings = await loadSettings();
-  return { title: settings.customTitleDefault, prompt: settings.extendedPromptDefault };
+  const session = sessionId ? await getSession(sessionId) : null;
+  return {
+    title: session?.title ?? settings.customTitleDefault,
+    prompt: session?.prompt ?? settings.extendedPromptDefault,
+  };
 }
 
 async function hasPreviousSummaryFor(sessionId: string | null): Promise<boolean> {
@@ -263,15 +270,16 @@ async function hasPreviousSummaryFor(sessionId: string | null): Promise<boolean>
 }
 
 async function getPopupState(): Promise<PopupState> {
-  const sessionId = getActiveSessionId();
+  const sessionId = await getActiveSessionId();
   const entriesCount = sessionId ? await countEntries(sessionId) : 0;
-  const defaults = await loadDefaults();
+  const defaults = await loadDefaults(sessionId);
   return {
     status: state.status,
     entriesCount,
     lastError: state.lastError || undefined,
     resultText: state.resultText || undefined,
     hasPreviousSummary: await hasPreviousSummaryFor(sessionId),
+    activeSessionId: sessionId ?? undefined,
     defaults,
   };
 }
@@ -316,9 +324,12 @@ async function analyze(sessionId: string, options: AnalyzeOptionsPayload): Promi
   state.status = "analyzing";
   state.lastError = "";
   try {
+    // Per-session title/prompt drive the summary; the payload only overrides
+    // them for this one run (e.g. an unsaved edit in the box).
+    const session = await getSession(sessionId);
     const result = await analyzeSession(sessionId, {
-      userPrompt: options.prompt,
-      title: options.title,
+      userPrompt: options.prompt ?? session?.prompt,
+      title: options.title ?? session?.title,
       includePrevious: options.includePrevious,
     });
     state.status = "result_ready";
@@ -334,7 +345,7 @@ async function analyze(sessionId: string, options: AnalyzeOptionsPayload): Promi
 async function analyzeCurrentSession(
   payload: AnalyzeOptionsPayload | undefined,
 ): Promise<PopupState> {
-  const sessionId = getActiveSessionId();
+  const sessionId = await getActiveSessionId();
   if (!sessionId) {
     state.status = "error";
     state.lastError = "No active session";
@@ -347,12 +358,28 @@ async function analyzeArbitrarySession(payload: AnalyzeSessionPayload): Promise<
   return analyze(payload.sessionId, payload);
 }
 
-async function handlePageStatus(payload: PageStatusMessagePayload): Promise<PopupState> {
+async function currentPageUrl(fallback: string | undefined): Promise<string> {
   const active = await getActiveSession();
-  if (active && active.pageUrl !== payload.pageUrl) {
-    await stopActiveSession();
-    state.resultText = "";
-  }
+  return fallback ?? active?.pageUrl ?? latestDiagnostics?.pageUrl ?? "";
+}
+
+async function handleCreateSession(payload: { pageUrl?: string } | undefined): Promise<PopupState> {
+  await createAndActivateSession(await currentPageUrl(payload?.pageUrl));
+  state.resultText = "";
+  state.lastError = "";
+  return getPopupState();
+}
+
+async function handleSetActiveSession(payload: { sessionId: string }): Promise<PopupState> {
+  await setActiveSession(payload.sessionId);
+  state.resultText = "";
+  state.lastError = "";
+  return getPopupState();
+}
+
+async function handlePageStatus(payload: PageStatusMessagePayload): Promise<PopupState> {
+  // The active session is explicit now; navigating away no longer ends it here.
+  // The caption ingest path auto-switches when the meeting URL changes.
   state.status = payload.status;
   state.lastError = "";
   return getPopupState();
@@ -372,7 +399,7 @@ function handleDiagnosticsReport(payload: DiagnosticsReportPayload): { ok: true 
 async function handleClearResult(): Promise<PopupState> {
   state.resultText = "";
   state.lastError = "";
-  const fallback: PluginStatus = getActiveSessionId() ? "capturing" : "on_teams";
+  const fallback: PluginStatus = (await getActiveSessionId()) ? "capturing" : "on_teams";
   state.status = fallback;
   return getPopupState();
 }
@@ -386,7 +413,7 @@ async function handleStopCapture(): Promise<PopupState> {
   return getPopupState();
 }
 
-browser.runtime.onMessage.addListener((message: RuntimeMessage) => {
+function routeMessage(message: RuntimeMessage): Promise<unknown> {
   switch (message.type) {
     case "GET_POPUP_STATE":
       return getPopupState();
@@ -412,6 +439,12 @@ browser.runtime.onMessage.addListener((message: RuntimeMessage) => {
     case "ANALYZE_SESSION":
       return analyzeArbitrarySession(message.payload);
 
+    case "CREATE_SESSION":
+      return handleCreateSession(message.payload);
+
+    case "SET_ACTIVE_SESSION":
+      return handleSetActiveSession(message.payload);
+
     case "CLEAR_RESULT":
       return handleClearResult();
 
@@ -424,4 +457,24 @@ browser.runtime.onMessage.addListener((message: RuntimeMessage) => {
     default:
       return Promise.resolve();
   }
-});
+}
+
+// Explicit sendResponse + `return true` instead of returning the promise:
+// Chrome only honors promise-returning onMessage listeners since 146, and a
+// dropped response leaves the popup silently dead.
+browser.runtime.onMessage.addListener(
+  (message: RuntimeMessage, _sender, sendResponse: (response: unknown) => void) => {
+    // Void handlers (e.g. CAPTION_ENTRY) resolve to undefined; answer with a
+    // marker object so senders can distinguish "handled" from "no listener".
+    routeMessage(message).then(
+      (result) => sendResponse(result ?? { ok: true }),
+      (error) => {
+        console.error("[teams-captions] handler failed", message.type, error);
+        sendResponse({
+          __error: error instanceof Error ? error.message : String(error),
+        } satisfies ErrorResponse);
+      },
+    );
+    return true;
+  },
+);

@@ -1,10 +1,11 @@
 import "fake-indexeddb/auto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  createAndActivateSession,
   getActiveSession,
   getActiveSessionId,
   ingestCaption,
-  resetForTesting,
+  setActiveSession,
   stopActiveSession,
 } from "../src/background/session-orchestrator.js";
 import { getDb, listSessions, setDbForTesting } from "../src/shared/db/index.js";
@@ -24,7 +25,6 @@ function makeEntry(overrides: Partial<CaptionEntry> = {}): CaptionEntry {
 
 describe("session orchestrator", () => {
   beforeEach(() => {
-    resetForTesting();
     const db = createDatabase(`orch-${crypto.randomUUID()}`);
     setDbForTesting(db);
   });
@@ -34,7 +34,6 @@ describe("session orchestrator", () => {
     db.close();
     await indexedDB.deleteDatabase(db.name);
     setDbForTesting(null);
-    resetForTesting();
   });
 
   it("creates a session on first caption and persists it", async () => {
@@ -43,7 +42,7 @@ describe("session orchestrator", () => {
       makeEntry({ text: "hi" }),
     );
     expect(session.entries).toHaveLength(1);
-    expect(getActiveSessionId()).toBe(session.sessionId);
+    expect(await getActiveSessionId()).toBe(session.sessionId);
 
     const persisted = await listSessions();
     expect(persisted).toHaveLength(1);
@@ -101,23 +100,46 @@ describe("session orchestrator", () => {
     expect(prior?.endedAt).toBeTruthy();
   });
 
-  it("stops active session and clears in-memory pointer", async () => {
+  it("stops active session and clears the pointer", async () => {
     await ingestCaption("https://teams.microsoft.com/m/1", makeEntry());
     await stopActiveSession();
-    expect(getActiveSessionId()).toBeNull();
+    expect(await getActiveSessionId()).toBeNull();
     expect(await getActiveSession()).toBeNull();
     const all = await listSessions();
     expect(all[0]?.endedAt).toBeTruthy();
   });
 
-  it("reuses existing active session for same url after process restart", async () => {
+  it("keeps the same active session for same url across restarts (pointer persisted)", async () => {
     const first = await ingestCaption("https://teams.microsoft.com/m/1", makeEntry({ text: "a" }));
-    resetForTesting();
     const reopened = await ingestCaption(
       "https://teams.microsoft.com/m/1",
       makeEntry({ text: "b" }),
     );
     expect(reopened.sessionId).toBe(first.sessionId);
     expect(reopened.entries.map((e) => e.text)).toEqual(["a", "b"]);
+  });
+
+  it("createAndActivateSession makes a fresh session active without deleting the old one", async () => {
+    const first = await ingestCaption("https://teams.microsoft.com/m/1", makeEntry({ text: "a" }));
+    const created = await createAndActivateSession("https://teams.microsoft.com/m/1");
+
+    expect(created.id).not.toBe(first.sessionId);
+    expect(await getActiveSessionId()).toBe(created.id);
+    expect(await listSessions()).toHaveLength(2);
+
+    const next = await ingestCaption("https://teams.microsoft.com/m/1", makeEntry({ text: "b" }));
+    expect(next.sessionId).toBe(created.id);
+  });
+
+  it("setActiveSession redirects capture to a chosen session", async () => {
+    const first = await ingestCaption("https://teams.microsoft.com/m/1", makeEntry({ text: "a" }));
+    await createAndActivateSession("https://teams.microsoft.com/m/1");
+
+    await setActiveSession(first.sessionId);
+    expect(await getActiveSessionId()).toBe(first.sessionId);
+
+    const back = await ingestCaption("https://teams.microsoft.com/m/1", makeEntry({ text: "b" }));
+    expect(back.sessionId).toBe(first.sessionId);
+    expect(back.entries.map((e) => e.text)).toEqual(["a", "b"]);
   });
 });
