@@ -125,12 +125,19 @@ describe("LLM orchestrator", () => {
 
     const reduceCall = generateAnalysis.mock.calls.at(-1);
     expect(reduceCall).toBeTruthy();
-    const payload = reduceCall?.[1] as { messages: Array<{ content: string }> };
+    const payload = reduceCall?.[1] as {
+      messages: Array<{ role: string; content: string }>;
+    };
+    const systemContent = payload.messages[0]?.content ?? "";
     const userContent = payload.messages[1]?.content ?? "";
-    expect(userContent).toContain("Title: Sprint review");
-    expect(userContent).toContain("PREVIOUS_SUMMARY_BEGIN");
+    // Instructions (title + user prompt) live in the system message.
+    expect(systemContent).toContain("Sprint review");
+    expect(systemContent).toContain("Additional user instructions:");
+    expect(systemContent).toContain("follow-up");
+    // Data (summaries + previous summary) lives, delimited, in the user message.
     expect(userContent).toContain("first-summary");
-    expect(userContent).toContain("Additional instructions:");
+    expect(userContent).toContain("Previous summary (data)");
+    expect(userContent).toContain("<<<DATA_BEGIN>>>");
   });
 
   it("does not include previous summary when includePrevious=false", async () => {
@@ -149,7 +156,7 @@ describe("LLM orchestrator", () => {
 
     const reduceCall = generateAnalysis.mock.calls.at(-1);
     const payload = reduceCall?.[1] as { messages: Array<{ content: string }> };
-    expect(payload.messages[1]?.content ?? "").not.toContain("PREVIOUS_SUMMARY_BEGIN");
+    expect(payload.messages[1]?.content ?? "").not.toContain("Previous summary (data)");
   });
 
   it("keeps only the latest summary per session", async () => {

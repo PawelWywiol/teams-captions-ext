@@ -8,6 +8,7 @@ import {
   type StoredCaptionEntry,
   type StoredChunk,
   type StoredProgress,
+  type StoredPromptTemplate,
   type StoredSession,
   type StoredSummary,
 } from "./schema.js";
@@ -251,6 +252,60 @@ export async function clearProgress(sessionId: string): Promise<void> {
 
 export function watchAnalysisProgress(sessionId: string): Observable<StoredProgress | null> {
   return liveQuery(() => getProgress(sessionId));
+}
+
+export type PromptTemplateInput = { name: string; title?: string; body?: string };
+
+export async function listPromptTemplates(): Promise<StoredPromptTemplate[]> {
+  return getDb().promptTemplates.orderBy("name").toArray();
+}
+
+export function watchPromptTemplates(): Observable<StoredPromptTemplate[]> {
+  return liveQuery(() => listPromptTemplates());
+}
+
+export async function getPromptTemplate(id: string): Promise<StoredPromptTemplate | null> {
+  return (await getDb().promptTemplates.get(id)) ?? null;
+}
+
+export async function createPromptTemplate(
+  input: PromptTemplateInput,
+): Promise<StoredPromptTemplate> {
+  const name = input.name.trim();
+  if (!name) throw new Error("Prompt name must not be empty");
+  const now = nowIso();
+  const template: StoredPromptTemplate = {
+    id: crypto.randomUUID(),
+    name,
+    title: input.title?.trim() ?? "",
+    body: input.body ?? "",
+    createdAt: now,
+    updatedAt: now,
+  };
+  await getDb().promptTemplates.add(template);
+  return template;
+}
+
+export async function updatePromptTemplate(
+  id: string,
+  patch: Partial<PromptTemplateInput>,
+): Promise<void> {
+  const changes: Partial<StoredPromptTemplate> = {};
+  if (patch.name !== undefined) {
+    const trimmed = patch.name.trim();
+    if (!trimmed) throw new Error("Prompt name must not be empty");
+    changes.name = trimmed;
+  }
+  if (patch.title !== undefined) changes.title = patch.title.trim();
+  if (patch.body !== undefined) changes.body = patch.body;
+  if (Object.keys(changes).length) {
+    changes.updatedAt = nowIso();
+    await getDb().promptTemplates.update(id, changes);
+  }
+}
+
+export async function deletePromptTemplate(id: string): Promise<void> {
+  await getDb().promptTemplates.delete(id);
 }
 
 export async function reconcileInterruptedAnalyses(): Promise<void> {

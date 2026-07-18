@@ -1,4 +1,5 @@
 import type { CaptionEntry } from "../types.js";
+import { neutralizeInline, neutralizeText } from "./sanitize.js";
 
 export const GAP_MS = 15 * 60 * 1000;
 export const MAX_CHARS = 8000;
@@ -59,6 +60,9 @@ export function chunkToTranscript(
   resolveSpeaker: (entry: CaptionEntry) => string,
 ): string {
   return chunk.entries
-    .map((entry) => `- ${entry.ts} | ${resolveSpeaker(entry)}: ${entry.text}`)
+    .map(
+      (entry) =>
+        `- ${entry.ts} | ${neutralizeInline(resolveSpeaker(entry))}: ${neutralizeText(entry.text)}`,
+    )
     .join("\n");
 }

@@ -1,6 +1,13 @@
 import { signal } from "@preact/signals";
 import { useEffect, useState } from "preact/hooks";
-import { updateSession, watchActiveSessionId, watchSessionEntries } from "../../shared/db/index.js";
+import {
+  createPromptTemplate,
+  updateSession,
+  watchActiveSessionId,
+  watchPromptTemplates,
+  watchSessionEntries,
+} from "../../shared/db/index.js";
+import type { StoredPromptTemplate } from "../../shared/db/schema.js";
 import { sendRuntimeMessage } from "../../shared/messages.js";
 import type {
   AnalyzeOptionsPayload,
@@ -171,12 +178,64 @@ function openSessions(): void {
   void browser.tabs.create({ url });
 }
 
+function openPrompts(): void {
+  const url = browser.runtime.getURL("prompts/index.html");
+  void browser.tabs.create({ url });
+}
+
+function applyTemplate(template: StoredPromptTemplate): void {
+  if (template.title.trim()) {
+    titleInput.value = template.title;
+    titleDirty.value = true;
+    void persistTitle();
+  }
+  promptInput.value = template.body;
+  promptDirty.value = true;
+  void persistPrompt();
+}
+
+async function saveAsTemplate(): Promise<void> {
+  const name = window.prompt("New prompt name");
+  if (!name || !name.trim()) return;
+  try {
+    await createPromptTemplate({ name, title: titleInput.value, body: promptInput.value });
+    showNotice("ok", "Saved as prompt");
+  } catch (error) {
+    showNotice("error", errorText(error, "Save failed"), 4000);
+  }
+}
+
 function AnalyzeTab(): preact.JSX.Element {
   const { status, entriesCount, resultText, hasPreviousSummary } = popupState.value;
   const canAnalyze = !busy.value && entriesCount > 0 && status !== "analyzing";
+  const templates = useLiveQuery(() => watchPromptTemplates(), []) ?? [];
 
   return (
     <div class="stack">
+      <Field
+        label="Prompt template"
+        htmlFor="popup-template"
+        hint="Fills the title and prompt below. Editing here does not change the template."
+      >
+        <select
+          id="popup-template"
+          data-testid="template-select"
+          onChange={(e) => {
+            const select = e.target as HTMLSelectElement;
+            const template = templates.find((t) => t.id === select.value);
+            if (template) applyTemplate(template);
+            select.value = "";
+          }}
+        >
+          <option value="">— Select template —</option>
+          {templates.map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.name}
+            </option>
+          ))}
+        </select>
+      </Field>
+
       <Field label="Title" htmlFor="popup-title" hint="Sent with the prompt to the LLM.">
         <input
           id="popup-title"
@@ -209,6 +268,16 @@ function AnalyzeTab(): preact.JSX.Element {
           placeholder="Focus on action items, decisions, blockers…"
         />
       </Field>
+
+      <div class="row">
+        <Button
+          variant="ghost"
+          onClick={() => void saveAsTemplate()}
+          data-testid="save-template-btn"
+        >
+          Save as template
+        </Button>
+      </div>
 
       <label
         class="row"
@@ -247,6 +316,9 @@ function AnalyzeTab(): preact.JSX.Element {
           {creating.value ? "Creating…" : "New session"}
         </Button>
         <Button onClick={openSessions}>Sessions</Button>
+        <Button onClick={openPrompts} data-testid="open-prompts-btn">
+          Prompts
+        </Button>
         <Button onClick={() => void browser.runtime.openOptionsPage()}>Settings</Button>
       </div>
 

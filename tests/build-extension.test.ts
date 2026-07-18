@@ -28,6 +28,8 @@ describe("build:extension packaging", () => {
     expect(existsSync(resolve(distExtension, "popup/index.html"))).toBe(true);
     expect(existsSync(resolve(distExtension, "sessions/index.js"))).toBe(true);
     expect(existsSync(resolve(distExtension, "sessions/index.html"))).toBe(true);
+    expect(existsSync(resolve(distExtension, "prompts/index.js"))).toBe(true);
+    expect(existsSync(resolve(distExtension, "prompts/index.html"))).toBe(true);
     expect(existsSync(resolve(distExtension, "ui/shared/tokens.css"))).toBe(true);
     expect(existsSync(resolve(distExtension, "tests"))).toBe(false);
     expect(existsSync(resolve(distExtension, "src"))).toBe(false);

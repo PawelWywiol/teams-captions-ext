@@ -15,6 +15,15 @@ export type StoredSession = {
   endedAt?: string;
 };
 
+export type StoredPromptTemplate = {
+  id: string;
+  name: string;
+  title: string;
+  body: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type MetaRow = {
   key: string;
   value: string;
@@ -62,10 +71,11 @@ export type CaptionsDb = Dexie & {
   summaries: EntityTable<StoredSummary, "id">;
   meta: EntityTable<MetaRow, "key">;
   progress: EntityTable<StoredProgress, "sessionId">;
+  promptTemplates: EntityTable<StoredPromptTemplate, "id">;
 };
 
 export const DB_NAME = "teams-captions-ext";
-export const DB_VERSION = 4;
+export const DB_VERSION = 5;
 
 export const ACTIVE_SESSION_KEY = "activeSessionId";
 
@@ -113,6 +123,16 @@ export function createDatabase(name: string = DB_NAME): CaptionsDb {
     summaries: "id, sessionId, createdAt",
     meta: "key",
     progress: "sessionId",
+  });
+
+  db.version(5).stores({
+    sessions: "id, pageUrl, startedAt, updatedAt",
+    entries: "id, sessionId, ts, [sessionId+ts]",
+    chunks: "id, sessionId, hash, [sessionId+hash]",
+    summaries: "id, sessionId, createdAt",
+    meta: "key",
+    progress: "sessionId",
+    promptTemplates: "id, name, updatedAt",
   });
 
   return db;

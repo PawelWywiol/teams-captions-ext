@@ -1,12 +1,14 @@
 import { signal } from "@preact/signals";
 import { useState } from "preact/hooks";
 import {
+  createPromptTemplate,
   deleteSession,
   renameSession,
   updateSession,
   watchActiveSessionId,
   watchAnalysisProgress,
   watchLatestSummary,
+  watchPromptTemplates,
   watchSessionEntries,
   watchSessions,
 } from "../../shared/db/index.js";
@@ -51,6 +53,11 @@ async function onSetActive(sessionId: string): Promise<void> {
   } catch (error) {
     console.error("[teams-captions] set active failed", error);
   }
+}
+
+function openPrompts(): void {
+  const url = browser.runtime.getURL("prompts/index.html");
+  void browser.tabs.create({ url });
 }
 
 function SessionList({
@@ -177,9 +184,21 @@ function SummaryPanel({ session }: { session: StoredSession }): preact.JSX.Eleme
     [sessionId],
   );
   const progress = useLiveQuery(() => watchAnalysisProgress(sessionId), [sessionId]);
+  const templates = useLiveQuery(() => watchPromptTemplates(), []) ?? [];
   const running = progress
     ? (["preparing", "mapping", "reducing"] as const).some((p) => p === progress.phase)
     : false;
+
+  async function saveAsTemplate(): Promise<void> {
+    const name = prompt("New prompt name");
+    if (name == null || !name.trim()) return;
+    try {
+      await createPromptTemplate({ name, title: session.title, body: userPrompt });
+      setStatusMsg("Saved as prompt");
+    } catch (error) {
+      setStatusMsg(error instanceof Error ? error.message : "Save failed");
+    }
+  }
 
   async function analyze(): Promise<void> {
     if (busy) return;
@@ -214,8 +233,38 @@ function SummaryPanel({ session }: { session: StoredSession }): preact.JSX.Eleme
     setTimeout(() => setCopyState(""), 1500);
   }
 
+  function applyTemplate(id: string): void {
+    const template = templates.find((t) => t.id === id);
+    if (!template) return;
+    setUserPrompt(template.body);
+    void updateSession(sessionId, { prompt: template.body });
+    if (template.title.trim()) void updateSession(sessionId, { title: template.title });
+  }
+
   return (
     <div class="stack">
+      <Field
+        label="Prompt template"
+        htmlFor="summary-template"
+        hint="Fills the prompt below. Editing here does not change the template."
+      >
+        <select
+          id="summary-template"
+          data-testid="summary-template-select"
+          onChange={(e) => {
+            const select = e.target as HTMLSelectElement;
+            applyTemplate(select.value);
+            select.value = "";
+          }}
+        >
+          <option value="">— Select template —</option>
+          {templates.map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.name}
+            </option>
+          ))}
+        </select>
+      </Field>
       <Field
         label="Session Prompt"
         htmlFor="summary-prompt"
@@ -230,6 +279,11 @@ function SummaryPanel({ session }: { session: StoredSession }): preact.JSX.Eleme
           onBlur={() => void updateSession(sessionId, { prompt: userPrompt })}
         />
       </Field>
+      <div class="row">
+        <Button onClick={() => void saveAsTemplate()} data-testid="summary-save-template">
+          Save as template
+        </Button>
+      </div>
       <div class="row">
         <Button variant="primary" onClick={analyze} disabled={busy || running}>
           {summary ? "Regenerate" : "Analyze"}
@@ -390,13 +444,18 @@ export function App(): preact.JSX.Element {
       <aside class="stack" style={{ minHeight: 0 }}>
         <div class="row" style={{ justifyContent: "space-between" }}>
           <h1 style={{ margin: 0, fontSize: "var(--text-lg)" }}>Sessions</h1>
-          <Button
-            variant="primary"
-            onClick={() => void onNewSession()}
-            data-testid="new-session-btn"
-          >
-            New session
-          </Button>
+          <div class="row">
+            <Button onClick={openPrompts} data-testid="open-prompts-btn">
+              Prompts
+            </Button>
+            <Button
+              variant="primary"
+              onClick={() => void onNewSession()}
+              data-testid="new-session-btn"
+            >
+              New session
+            </Button>
+          </div>
         </div>
         <Field label="Search" htmlFor="sessions-search">
           <input

@@ -9,7 +9,15 @@ const srcDir = resolve(repoRoot, "src");
 async function main() {
   rmSync(outdir, { force: true, recursive: true });
   mkdirSync(outdir, { recursive: true });
-  for (const sub of ["background", "content", "options", "popup", "sessions", "ui/shared"]) {
+  for (const sub of [
+    "background",
+    "content",
+    "options",
+    "popup",
+    "sessions",
+    "prompts",
+    "ui/shared",
+  ]) {
     mkdirSync(resolve(outdir, sub), { recursive: true });
   }
 
@@ -32,6 +40,7 @@ async function main() {
       "options/index": resolve(srcDir, "options/index.tsx"),
       "popup/index": resolve(srcDir, "popup/index.tsx"),
       "sessions/index": resolve(srcDir, "sessions/index.tsx"),
+      "prompts/index": resolve(srcDir, "prompts/index.tsx"),
     },
     format: "esm",
   });
@@ -53,6 +62,7 @@ async function main() {
   cpSync(resolve(srcDir, "options/index.html"), resolve(outdir, "options/index.html"));
   cpSync(resolve(srcDir, "popup/index.html"), resolve(outdir, "popup/index.html"));
   cpSync(resolve(srcDir, "sessions/index.html"), resolve(outdir, "sessions/index.html"));
+  cpSync(resolve(srcDir, "prompts/index.html"), resolve(outdir, "prompts/index.html"));
   cpSync(resolve(srcDir, "ui/shared/tokens.css"), resolve(outdir, "ui/shared/tokens.css"));
 }
 
