@@ -6,7 +6,7 @@
 4. User triggers analysis from the popup.
 5. Background loads settings and the full session (entries projected via `loadSession`).
 6. Payload builder creates a structured transcript block.
-7. Proxy client sends `POST /v1/generate`.
+7. Proxy client sends `POST /v1/chat/completions`.
 8. Background stores the returned text in popup state.
 
 Planned (PR #3): split step 6–7 into chunked map + reduce with cache, persisting chunk summaries and final summaries alongside the session.

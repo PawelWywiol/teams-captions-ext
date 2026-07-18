@@ -24,7 +24,8 @@ export function buildMapPayload(
 ): Record<string, unknown> {
   const transcript = chunkToTranscript(chunk, speakerOf(settings));
   return {
-    provider: settings.provider,
+    model: settings.provider,
+    stream: false,
     messages: [
       { role: "system", content: SYSTEM_PROMPT },
       {
@@ -62,7 +63,8 @@ export function buildReducePayload(
     : "";
 
   return {
-    provider: settings.provider,
+    model: settings.provider,
+    stream: false,
     messages: [
       { role: "system", content: SYSTEM_PROMPT },
       {

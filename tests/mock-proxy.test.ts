@@ -70,14 +70,15 @@ afterEach(async () => {
 }, 15000);
 
 describe("mock LLM proxy", () => {
-  it("serves health and generate endpoints for manual testing", async () => {
+  it("serves health and chat completions endpoints for manual testing", async () => {
     const { port } = await startMockProxy();
 
-    const response = await fetch(`http://127.0.0.1:${port}/v1/generate`, {
+    const response = await fetch(`http://127.0.0.1:${port}/v1/chat/completions`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        provider: "copilot",
+        model: "copilot",
+        stream: false,
         messages: [
           { role: "system", content: "Analyze Teams captions" },
           {
@@ -90,30 +91,38 @@ describe("mock LLM proxy", () => {
     });
 
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual({
-      output: {
-        text: expect.stringContaining("Mock summary"),
-      },
+    await expect(response.json()).resolves.toMatchObject({
+      object: "chat.completion",
+      choices: [
+        {
+          index: 0,
+          message: {
+            role: "assistant",
+            content: expect.stringContaining("Mock summary"),
+          },
+          finish_reason: "stop",
+        },
+      ],
     });
   }, 15000);
 
   it("can require a bearer token to exercise secure settings flow manually", async () => {
     const { port } = await startMockProxy({ MOCK_BEARER_TOKEN: "secret-demo-token" });
 
-    const denied = await fetch(`http://127.0.0.1:${port}/v1/generate`, {
+    const denied = await fetch(`http://127.0.0.1:${port}/v1/chat/completions`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ provider: "copilot", messages: [] }),
+      body: JSON.stringify({ model: "copilot", stream: false, messages: [] }),
     });
     expect(denied.status).toBe(401);
 
-    const allowed = await fetch(`http://127.0.0.1:${port}/v1/generate`, {
+    const allowed = await fetch(`http://127.0.0.1:${port}/v1/chat/completions`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: "Bearer secret-demo-token",
       },
-      body: JSON.stringify({ provider: "copilot", messages: [] }),
+      body: JSON.stringify({ model: "copilot", stream: false, messages: [] }),
     });
 
     expect(allowed.status).toBe(200);

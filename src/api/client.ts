@@ -16,7 +16,7 @@ export async function generateAnalysis(
     );
   }
 
-  const response = await fetch(`${settings.apiBaseUrl}/v1/generate`, {
+  const response = await fetch(`${settings.apiBaseUrl}/v1/chat/completions`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -28,12 +28,12 @@ export async function generateAnalysis(
 
   const json = (await response.json()) as {
     error?: { message?: string };
-    output?: { text?: string };
+    choices?: Array<{ message?: { content?: string } }>;
   };
 
   if (!response.ok) {
     throw new Error(json.error?.message || "Request failed");
   }
 
-  return json.output?.text ?? "";
+  return json.choices?.[0]?.message?.content ?? "";
 }

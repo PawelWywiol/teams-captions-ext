@@ -18,7 +18,7 @@ const server = createServer((request, response) => {
     return;
   }
 
-  if (method !== "POST" || url !== "/v1/generate") {
+  if (method !== "POST" || url !== "/v1/chat/completions") {
     sendJson(response, 404, { error: { message: "Not found" } });
     return;
   }
@@ -53,12 +53,25 @@ const server = createServer((request, response) => {
 
     const summary = [
       "Mock summary",
-      `Provider: ${parsed.provider || "unknown"}`,
+      `Model: ${parsed.model || "unknown"}`,
       `Caption lines: ${transcriptLines.length}`,
       transcriptLines.length > 0 ? `First line: ${transcriptLines[0]}` : "First line: none",
     ].join("\n");
 
-    sendJson(response, 200, { output: { text: summary } });
+    sendJson(response, 200, {
+      id: `mock-${Date.now()}`,
+      object: "chat.completion",
+      created: Math.floor(Date.now() / 1000),
+      model: parsed.model || "unknown",
+      choices: [
+        {
+          index: 0,
+          message: { role: "assistant", content: summary },
+          finish_reason: "stop",
+        },
+      ],
+      usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+    });
   });
 });
 
