@@ -15,13 +15,20 @@ const baseSettings: PluginSettings = {
 type StorageModule = typeof import("../src/shared/storage.js");
 
 describe("options recovery UI", () => {
+  let permissionsRequest: ReturnType<typeof vi.fn>;
+
   beforeEach(() => {
     vi.resetModules();
+    permissionsRequest = vi.fn(async () => true);
+    vi.stubGlobal("browser", {
+      permissions: { contains: vi.fn(async () => true), request: permissionsRequest },
+    });
   });
 
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it("disables save, renders non-secret settings, and re-enables only after token re-entry on secure-load failure", async () => {
@@ -67,6 +74,9 @@ describe("options recovery UI", () => {
     expect(saveSettings).toHaveBeenCalledWith({
       ...baseSettings,
       bearerToken: "fresh-token",
+    });
+    expect(permissionsRequest).toHaveBeenCalledWith({
+      origins: ["https://proxy.example.test/*"],
     });
     expect(saveStatus?.textContent).toBe("Saved");
   });

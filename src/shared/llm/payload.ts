@@ -3,7 +3,7 @@ import type { CaptionEntry, PluginSettings } from "../types.js";
 import { chunkToTranscript, type CaptionChunk } from "./chunker.js";
 import { DEFAULT_MAP_PROMPT, DEFAULT_REDUCE_PROMPT, SYSTEM_PROMPT } from "./prompts.js";
 
-function speakerOf(settings: PluginSettings) {
+export function speakerOf(settings: PluginSettings) {
   return (entry: CaptionEntry): string =>
     resolveSpeakerName(entry.speakerOriginal, settings.participantAliases) ||
     entry.speakerResolved ||

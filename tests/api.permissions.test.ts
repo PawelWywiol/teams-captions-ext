@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { ensureApiOriginPermission } from "../src/api/permissions.js";
+import { hasApiOriginPermission, requestApiOriginPermission } from "../src/api/permissions.js";
 
 function makePermissions(overrides?: {
   contains?: (details: { origins: string[] }) => Promise<boolean>;
@@ -11,48 +11,59 @@ function makePermissions(overrides?: {
   };
 }
 
-describe("API origin permission helper", () => {
-  it("does not request permission when apiBaseUrl is empty", async () => {
+describe("hasApiOriginPermission", () => {
+  it("returns true without checking when apiBaseUrl is empty", async () => {
     const permissions = makePermissions();
 
-    await expect(ensureApiOriginPermission("", permissions)).resolves.toBeUndefined();
+    await expect(hasApiOriginPermission("", permissions)).resolves.toBe(true);
     expect(permissions.contains).not.toHaveBeenCalled();
     expect(permissions.request).not.toHaveBeenCalled();
   });
 
-  it("does not request permission when origin is already granted", async () => {
+  it("checks the port-less origin and never requests", async () => {
     const permissions = makePermissions({ contains: async () => true });
 
     await expect(
-      ensureApiOriginPermission("https://proxy.example.test/v1", permissions),
-    ).resolves.toBeUndefined();
+      hasApiOriginPermission("http://127.0.0.1:11434/base/path", permissions),
+    ).resolves.toBe(true);
 
-    expect(permissions.contains).toHaveBeenCalledWith({
-      origins: ["https://proxy.example.test/*"],
-    });
+    expect(permissions.contains).toHaveBeenCalledWith({ origins: ["http://127.0.0.1/*"] });
     expect(permissions.request).not.toHaveBeenCalled();
   });
 
-  it("requests exact origin permission without port when not already granted", async () => {
-    const permissions = makePermissions({ contains: async () => false, request: async () => true });
+  it("returns false when the origin is not granted", async () => {
+    const permissions = makePermissions({ contains: async () => false });
 
-    await expect(
-      ensureApiOriginPermission("https://proxy.example.test:8443/base/path", permissions),
-    ).resolves.toBeUndefined();
+    await expect(hasApiOriginPermission("https://proxy.example.test", permissions)).resolves.toBe(
+      false,
+    );
+  });
+});
 
-    expect(permissions.request).toHaveBeenCalledWith({
-      origins: ["https://proxy.example.test/*"],
-    });
+describe("requestApiOriginPermission", () => {
+  it("returns true without prompting when apiBaseUrl is empty", async () => {
+    const permissions = makePermissions();
+
+    await expect(requestApiOriginPermission("", permissions)).resolves.toBe(true);
+    expect(permissions.request).not.toHaveBeenCalled();
   });
 
-  it("fails closed when user denies runtime host permission request", async () => {
-    const permissions = makePermissions({
-      contains: async () => false,
-      request: async () => false,
-    });
+  it("requests the exact port-less origin and does not pre-check with contains", async () => {
+    const permissions = makePermissions({ request: async () => true });
 
     await expect(
-      ensureApiOriginPermission("https://proxy.example.test/base/path", permissions),
-    ).rejects.toThrow("Permission to access configured API origin was denied");
+      requestApiOriginPermission("https://proxy.example.test:8443/base/path", permissions),
+    ).resolves.toBe(true);
+
+    expect(permissions.request).toHaveBeenCalledWith({ origins: ["https://proxy.example.test/*"] });
+    expect(permissions.contains).not.toHaveBeenCalled();
+  });
+
+  it("returns false when the user denies the request", async () => {
+    const permissions = makePermissions({ request: async () => false });
+
+    await expect(requestApiOriginPermission("http://127.0.0.1:11434", permissions)).resolves.toBe(
+      false,
+    );
   });
 });

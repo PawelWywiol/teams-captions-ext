@@ -9,6 +9,7 @@ import type {
   PopupState,
   RuntimeMessage,
 } from "../../shared/types.js";
+import { AnalysisProgress } from "../shared/AnalysisProgress.js";
 import { Button, EmptyState, Field, StatusBadge, Tabs } from "../shared/primitives.js";
 import { statusKind, statusLabel } from "../shared/status.js";
 import { useLiveQuery } from "../shared/useLiveQuery.js";
@@ -248,6 +249,10 @@ function AnalyzeTab(): preact.JSX.Element {
         <Button onClick={openSessions}>Sessions</Button>
         <Button onClick={() => void browser.runtime.openOptionsPage()}>Settings</Button>
       </div>
+
+      {popupState.value.activeSessionId ? (
+        <AnalysisProgress sessionId={popupState.value.activeSessionId} onResume={runAnalyze} />
+      ) : null}
 
       {notice.value ? (
         <div

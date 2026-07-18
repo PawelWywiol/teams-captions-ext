@@ -39,16 +39,33 @@ export type StoredSummary = {
   createdAt: string;
 };
 
+export type AnalysisPhase = "preparing" | "mapping" | "reducing" | "done" | "error" | "aborted";
+
+export type StoredProgress = {
+  sessionId: string;
+  runId: string;
+  phase: AnalysisPhase;
+  totalChunks: number;
+  completedChunks: number;
+  cachedChunks: number;
+  currentChunk: number;
+  charsSent: number;
+  charsTotal: number;
+  updatedAt: string;
+  error?: string;
+};
+
 export type CaptionsDb = Dexie & {
   sessions: EntityTable<StoredSession, "id">;
   entries: EntityTable<StoredCaptionEntry, "id">;
   chunks: EntityTable<StoredChunk, "id">;
   summaries: EntityTable<StoredSummary, "id">;
   meta: EntityTable<MetaRow, "key">;
+  progress: EntityTable<StoredProgress, "sessionId">;
 };
 
 export const DB_NAME = "teams-captions-ext";
-export const DB_VERSION = 3;
+export const DB_VERSION = 4;
 
 export const ACTIVE_SESSION_KEY = "activeSessionId";
 
@@ -88,6 +105,15 @@ export function createDatabase(name: string = DB_NAME): CaptionsDb {
         await tx.table<MetaRow>("meta").put({ key: ACTIVE_SESSION_KEY, value: latest.id });
       }
     });
+
+  db.version(4).stores({
+    sessions: "id, pageUrl, startedAt, updatedAt",
+    entries: "id, sessionId, ts, [sessionId+ts]",
+    chunks: "id, sessionId, hash, [sessionId+hash]",
+    summaries: "id, sessionId, createdAt",
+    meta: "key",
+    progress: "sessionId",
+  });
 
   return db;
 }

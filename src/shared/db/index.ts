@@ -3,9 +3,11 @@ import type { CaptionEntry, CaptionSession } from "../types.js";
 import {
   ACTIVE_SESSION_KEY,
   createDatabase,
+  type AnalysisPhase,
   type CaptionsDb,
   type StoredCaptionEntry,
   type StoredChunk,
+  type StoredProgress,
   type StoredSession,
   type StoredSummary,
 } from "./schema.js";
@@ -147,11 +149,12 @@ export async function deleteSession(sessionId: string): Promise<void> {
   const db = getDb();
   await db.transaction(
     "rw",
-    [db.sessions, db.entries, db.chunks, db.summaries, db.meta],
+    [db.sessions, db.entries, db.chunks, db.summaries, db.meta, db.progress],
     async () => {
       await db.entries.where("sessionId").equals(sessionId).delete();
       await db.chunks.where("sessionId").equals(sessionId).delete();
       await db.summaries.where("sessionId").equals(sessionId).delete();
+      await db.progress.delete(sessionId);
       await db.sessions.delete(sessionId);
       const active = await db.meta.get(ACTIVE_SESSION_KEY);
       if (active?.value === sessionId) await db.meta.delete(ACTIVE_SESSION_KEY);
@@ -209,4 +212,51 @@ export function watchSessions(): Observable<StoredSession[]> {
 
 export function watchSessionEntries(sessionId: string): Observable<StoredCaptionEntry[]> {
   return liveQuery(() => getSessionEntries(sessionId));
+}
+
+const ACTIVE_PHASES: AnalysisPhase[] = ["preparing", "mapping", "reducing"];
+
+export async function patchProgress(
+  sessionId: string,
+  patch: Partial<StoredProgress>,
+): Promise<void> {
+  try {
+    const db = getDb();
+    const existing = await db.progress.get(sessionId);
+    const base: StoredProgress = existing ?? {
+      sessionId,
+      runId: "",
+      phase: "preparing",
+      totalChunks: 0,
+      completedChunks: 0,
+      cachedChunks: 0,
+      currentChunk: 0,
+      charsSent: 0,
+      charsTotal: 0,
+      updatedAt: nowIso(),
+    };
+    await db.progress.put({ ...base, ...patch, sessionId, updatedAt: nowIso() });
+  } catch (error) {
+    console.error("[teams-captions] patchProgress failed", error);
+  }
+}
+
+export async function getProgress(sessionId: string): Promise<StoredProgress | null> {
+  return (await getDb().progress.get(sessionId)) ?? null;
+}
+
+export async function clearProgress(sessionId: string): Promise<void> {
+  await getDb().progress.delete(sessionId);
+}
+
+export function watchAnalysisProgress(sessionId: string): Observable<StoredProgress | null> {
+  return liveQuery(() => getProgress(sessionId));
+}
+
+export async function reconcileInterruptedAnalyses(): Promise<void> {
+  const db = getDb();
+  const orphaned = await db.progress.filter((row) => ACTIVE_PHASES.includes(row.phase)).toArray();
+  await Promise.all(
+    orphaned.map((row) => db.progress.update(row.sessionId, { phase: "aborted", updatedAt: nowIso() })),
+  );
 }

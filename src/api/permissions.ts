@@ -14,19 +14,27 @@ function getPermissionsApi(): RuntimePermissionsApi {
   return browser.permissions;
 }
 
-export async function ensureApiOriginPermission(
+// Check only. Safe to call from any context, including the background service
+// worker (which has no user gesture and cannot call request()).
+export async function hasApiOriginPermission(
   apiBaseUrl: string,
   permissionsApi: RuntimePermissionsApi = getPermissionsApi(),
-): Promise<void> {
+): Promise<boolean> {
   const originPattern = toOriginPattern(apiBaseUrl);
-  if (!originPattern) return;
+  if (!originPattern) return true;
 
-  const origins = [originPattern];
-  const alreadyGranted = await permissionsApi.contains({ origins });
-  if (alreadyGranted) return;
+  return permissionsApi.contains({ origins: [originPattern] });
+}
 
-  const granted = await permissionsApi.request({ origins });
-  if (!granted) {
-    throw new Error("Permission to access configured API origin was denied");
-  }
+// Prompt for the host permission. MUST be called synchronously within a user
+// gesture (e.g. an options-page button click): request() is the first await, so
+// the gesture is still active. Resolves true if already granted or just granted.
+export async function requestApiOriginPermission(
+  apiBaseUrl: string,
+  permissionsApi: RuntimePermissionsApi = getPermissionsApi(),
+): Promise<boolean> {
+  const originPattern = toOriginPattern(apiBaseUrl);
+  if (!originPattern) return true;
+
+  return permissionsApi.request({ origins: [originPattern] });
 }

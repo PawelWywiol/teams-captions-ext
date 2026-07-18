@@ -5,6 +5,7 @@ import {
   renameSession,
   updateSession,
   watchActiveSessionId,
+  watchAnalysisProgress,
   watchLatestSummary,
   watchSessionEntries,
   watchSessions,
@@ -12,6 +13,7 @@ import {
 import type { StoredSession, StoredSummary } from "../../shared/db/schema.js";
 import { sendRuntimeMessage } from "../../shared/messages.js";
 import type { PopupState } from "../../shared/types.js";
+import { AnalysisProgress } from "../shared/AnalysisProgress.js";
 import { Button, EmptyState, Field, StatusBadge } from "../shared/primitives.js";
 import { useLiveQuery } from "../shared/useLiveQuery.js";
 
@@ -174,6 +176,10 @@ function SummaryPanel({ session }: { session: StoredSession }): preact.JSX.Eleme
     () => watchLatestSummary(sessionId),
     [sessionId],
   );
+  const progress = useLiveQuery(() => watchAnalysisProgress(sessionId), [sessionId]);
+  const running = progress
+    ? (["preparing", "mapping", "reducing"] as const).some((p) => p === progress.phase)
+    : false;
 
   async function analyze(): Promise<void> {
     if (busy) return;
@@ -225,7 +231,7 @@ function SummaryPanel({ session }: { session: StoredSession }): preact.JSX.Eleme
         />
       </Field>
       <div class="row">
-        <Button variant="primary" onClick={analyze} disabled={busy}>
+        <Button variant="primary" onClick={analyze} disabled={busy || running}>
           {summary ? "Regenerate" : "Analyze"}
         </Button>
         <Button onClick={copy} disabled={!summary?.content}>
@@ -242,6 +248,7 @@ function SummaryPanel({ session }: { session: StoredSession }): preact.JSX.Eleme
           </span>
         ) : null}
       </div>
+      <AnalysisProgress sessionId={sessionId} onResume={analyze} />
       {summary?.content ? (
         <>
           <div class="muted" style={{ fontSize: "var(--text-xs)" }}>

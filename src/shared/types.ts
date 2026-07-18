@@ -129,6 +129,7 @@ export type RuntimeMessage =
   | { type: "DIAGNOSTICS_REPORT"; payload: DiagnosticsReportPayload }
   | { type: "ANALYZE_CURRENT_SESSION"; payload?: AnalyzeOptionsPayload }
   | { type: "ANALYZE_SESSION"; payload: AnalyzeSessionPayload }
+  | { type: "CANCEL_ANALYSIS"; payload: { sessionId: string } }
   | { type: "CREATE_SESSION"; payload?: { pageUrl?: string } }
   | { type: "SET_ACTIVE_SESSION"; payload: { sessionId: string } }
   | { type: "CLEAR_RESULT" }

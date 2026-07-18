@@ -4,6 +4,7 @@ import {
   upsertEntry,
   createSession,
   getDb,
+  getProgress,
   latestSummary,
   setDbForTesting,
 } from "../src/shared/db/index.js";
@@ -168,5 +169,69 @@ describe("LLM orchestrator", () => {
     const all = await db.summaries.where("sessionId").equals(s.id).toArray();
     expect(all).toHaveLength(1);
     expect(all[0]?.content).toBe("reduce-2");
+  });
+
+  it("writes progress to done on a successful run", async () => {
+    const { analyzeSession } = await import("../src/shared/llm/orchestrator.js");
+    generateAnalysis.mockResolvedValueOnce("map-1").mockResolvedValueOnce("reduce-final");
+
+    const s = await createSession("https://teams.microsoft.com/m/p1");
+    await upsertEntry(s.id, makeEntry("hello world", 0));
+
+    await analyzeSession(s.id, { userPrompt: "" });
+
+    const progress = await getProgress(s.id);
+    expect(progress?.phase).toBe("done");
+    expect(progress?.totalChunks).toBe(1);
+    expect(progress?.completedChunks).toBe(1);
+    expect(progress?.charsSent).toBeGreaterThan(0);
+    expect(progress?.charsTotal).toBeGreaterThan(0);
+  });
+
+  it("counts cached chunks without adding to charsSent", async () => {
+    const { analyzeSession } = await import("../src/shared/llm/orchestrator.js");
+    generateAnalysis
+      .mockResolvedValueOnce("map-1")
+      .mockResolvedValueOnce("reduce-A")
+      .mockResolvedValueOnce("reduce-B");
+
+    const s = await createSession("https://teams.microsoft.com/m/p2");
+    await upsertEntry(s.id, makeEntry("hello", 0));
+
+    await analyzeSession(s.id, {});
+    await analyzeSession(s.id, { userPrompt: "again" });
+
+    const progress = await getProgress(s.id);
+    expect(progress?.phase).toBe("done");
+    expect(progress?.cachedChunks).toBe(1);
+    expect(progress?.charsSent).toBe(0);
+  });
+
+  it("aborts before any CLI call when the signal is already aborted", async () => {
+    const { analyzeSession } = await import("../src/shared/llm/orchestrator.js");
+    const s = await createSession("https://teams.microsoft.com/m/p3");
+    await upsertEntry(s.id, makeEntry("hello", 0));
+
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(analyzeSession(s.id, {}, controller.signal)).rejects.toMatchObject({
+      name: "AbortError",
+    });
+    expect(generateAnalysis).not.toHaveBeenCalled();
+    expect((await getProgress(s.id))?.phase).toBe("aborted");
+  });
+
+  it("writes the error phase when a CLI call throws", async () => {
+    const { analyzeSession } = await import("../src/shared/llm/orchestrator.js");
+    generateAnalysis.mockRejectedValueOnce(new Error("boom"));
+
+    const s = await createSession("https://teams.microsoft.com/m/err");
+    await upsertEntry(s.id, makeEntry("hello", 0));
+
+    await expect(analyzeSession(s.id, {})).rejects.toThrow("boom");
+    const progress = await getProgress(s.id);
+    expect(progress?.phase).toBe("error");
+    expect(progress?.error).toContain("boom");
   });
 });

@@ -1,4 +1,9 @@
-import { countEntries, getSession, latestSummary } from "../shared/db/index.js";
+import {
+  countEntries,
+  getSession,
+  latestSummary,
+  reconcileInterruptedAnalyses,
+} from "../shared/db/index.js";
 import { analyzeSession } from "../shared/llm/orchestrator.js";
 import { loadSettings } from "../shared/storage.js";
 import type {
@@ -28,6 +33,11 @@ import {
 } from "./session-orchestrator.js";
 
 console.log("[teams-captions] background started", new Date().toISOString());
+
+const activeRuns = new Map<string, AbortController>();
+void reconcileInterruptedAnalyses().catch((error) => {
+  console.error("[teams-captions] reconcile failed", error);
+});
 
 const TEAMS_URL_PATTERNS = [
   "https://teams.microsoft.com/*",
@@ -323,23 +333,40 @@ async function getDiagnosticsView(): Promise<DiagnosticsView> {
 async function analyze(sessionId: string, options: AnalyzeOptionsPayload): Promise<PopupState> {
   state.status = "analyzing";
   state.lastError = "";
+  activeRuns.get(sessionId)?.abort();
+  const controller = new AbortController();
+  activeRuns.set(sessionId, controller);
   try {
-    // Per-session title/prompt drive the summary; the payload only overrides
-    // them for this one run (e.g. an unsaved edit in the box).
     const session = await getSession(sessionId);
-    const result = await analyzeSession(sessionId, {
-      userPrompt: options.prompt ?? session?.prompt,
-      title: options.title ?? session?.title,
-      includePrevious: options.includePrevious,
-    });
+    const result = await analyzeSession(
+      sessionId,
+      {
+        userPrompt: options.prompt ?? session?.prompt,
+        title: options.title ?? session?.title,
+        includePrevious: options.includePrevious,
+      },
+      controller.signal,
+    );
     state.status = "result_ready";
     state.resultText = result.summary.content;
     return getPopupState();
   } catch (error) {
-    state.status = "error";
-    state.lastError = error instanceof Error ? error.message : "Unexpected error";
+    const aborted = error instanceof DOMException && error.name === "AbortError";
+    if (aborted) {
+      state.status = "result_ready";
+    } else {
+      state.status = "error";
+      state.lastError = error instanceof Error ? error.message : "Unexpected error";
+    }
     return getPopupState();
+  } finally {
+    if (activeRuns.get(sessionId) === controller) activeRuns.delete(sessionId);
   }
+}
+
+function cancelAnalysis(payload: { sessionId: string }): Promise<PopupState> {
+  activeRuns.get(payload.sessionId)?.abort();
+  return getPopupState();
 }
 
 async function analyzeCurrentSession(
@@ -438,6 +465,9 @@ function routeMessage(message: RuntimeMessage): Promise<unknown> {
 
     case "ANALYZE_SESSION":
       return analyzeArbitrarySession(message.payload);
+
+    case "CANCEL_ANALYSIS":
+      return Promise.resolve(cancelAnalysis(message.payload));
 
     case "CREATE_SESSION":
       return handleCreateSession(message.payload);

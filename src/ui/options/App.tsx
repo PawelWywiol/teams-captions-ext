@@ -1,5 +1,6 @@
 import { signal } from "@preact/signals";
 import { useEffect } from "preact/hooks";
+import { requestApiOriginPermission } from "../../api/permissions.js";
 import { validateSettings } from "../../options/schema.js";
 import {
   defaultSettings,
@@ -71,11 +72,17 @@ async function save(): Promise<void> {
       return;
     }
   }
+  // Request the host permission here, within the Save click gesture — the
+  // background service worker cannot prompt for it (no user gesture there).
+  const granted = await requestApiOriginPermission(settings.value.apiBaseUrl);
+
   try {
     await saveSettings(settings.value);
     secureLoadFailed.value = false;
     recoveryDataLoaded.value = true;
-    saveStatus.value = "Saved";
+    saveStatus.value = granted
+      ? "Saved"
+      : "Saved, but access to the API origin was denied — Analyze will fail until you grant it";
   } catch (error) {
     saveStatus.value = error instanceof Error ? error.message : "Failed to save settings";
   }
