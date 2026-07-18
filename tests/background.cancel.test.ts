@@ -15,7 +15,9 @@ vi.mock("../src/shared/llm/orchestrator.js", () => ({
   analyzeSession: (_sessionId: string, _options: unknown, signal?: AbortSignal) => {
     if (signal) capturedSignals.push(signal);
     return new Promise((_resolve, reject) => {
-      signal?.addEventListener("abort", () => reject(new DOMException("Analysis aborted", "AbortError")));
+      signal?.addEventListener("abort", () =>
+        reject(new DOMException("Analysis aborted", "AbortError")),
+      );
     });
   },
 }));
@@ -29,7 +31,11 @@ describe("background CANCEL_ANALYSIS", () => {
     capturedSignals.length = 0;
     (globalThis as Record<string, unknown>).browser = {
       runtime: {
-        onMessage: { addListener: (l: Listener) => { listener = l; } },
+        onMessage: {
+          addListener: (l: Listener) => {
+            listener = l;
+          },
+        },
         getURL: (path: string) => `chrome-extension://test/${path}`,
         getManifest: () => ({ version: "0.1.0" }),
       },

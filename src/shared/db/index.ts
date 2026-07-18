@@ -257,6 +257,8 @@ export async function reconcileInterruptedAnalyses(): Promise<void> {
   const db = getDb();
   const orphaned = await db.progress.filter((row) => ACTIVE_PHASES.includes(row.phase)).toArray();
   await Promise.all(
-    orphaned.map((row) => db.progress.update(row.sessionId, { phase: "aborted", updatedAt: nowIso() })),
+    orphaned.map((row) =>
+      db.progress.update(row.sessionId, { phase: "aborted", updatedAt: nowIso() }),
+    ),
   );
 }

@@ -41,7 +41,11 @@ async function mapChunk(
   const existing = await findChunkByHash(sessionId, hash);
   if (existing) return { hash, summary: existing.summary, cached: true };
 
-  const summary = await generateAnalysis(settings, buildMapPayload(chunk, settings, { title }), signal);
+  const summary = await generateAnalysis(
+    settings,
+    buildMapPayload(chunk, settings, { title }),
+    signal,
+  );
   await saveChunk({
     id: crypto.randomUUID(),
     sessionId,
@@ -140,7 +144,8 @@ export async function analyzeSession(
       previousIncluded: !!previous,
     };
   } catch (error) {
-    const aborted = signal?.aborted || (error instanceof DOMException && error.name === "AbortError");
+    const aborted =
+      signal?.aborted || (error instanceof DOMException && error.name === "AbortError");
     await patchProgress(sessionId, {
       phase: aborted ? "aborted" : "error",
       error: error instanceof Error ? error.message : String(error),

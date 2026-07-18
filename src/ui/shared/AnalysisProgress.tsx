@@ -68,7 +68,8 @@ export function AnalysisProgress({
         </div>
         {progress.phase === "mapping" ? (
           <div class="muted" style={{ fontSize: "var(--text-xs)" }}>
-            Sent: {progress.charsSent.toLocaleString()} / ~{progress.charsTotal.toLocaleString()} chars
+            Sent: {progress.charsSent.toLocaleString()} / ~{progress.charsTotal.toLocaleString()}{" "}
+            chars
           </div>
         ) : null}
         <div class="row">
